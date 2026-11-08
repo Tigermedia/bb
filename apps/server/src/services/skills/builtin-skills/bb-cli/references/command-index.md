@@ -130,11 +130,11 @@ This index lists every command path that the core CLI registers. Read the task-s
 - `bb thread tabs show`
 - `bb thread tabs set`
 - `bb thread update`
-- `bb thread archive`
+- `bb thread archive` (`--approval` for one protected thread)
 - `bb thread unarchive`
 - `bb thread pin`
 - `bb thread unpin`
-- `bb thread delete`
+- `bb thread delete` (`--approval` for one protected thread)
 - `bb thread edit-message`
 - `bb thread tell`
 - `bb thread retry`

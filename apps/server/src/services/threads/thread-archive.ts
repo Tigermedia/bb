@@ -2,8 +2,9 @@ import {
   listLiveThreadsInEnvironment,
   listUnarchivedAssignedChildThreads,
   listUnarchivedHiddenSourceThreads,
+  ThreadLifecycleProtectedError,
 } from "@bb/db";
-import type { Environment, Thread } from "@bb/domain";
+import type { Environment, Thread, ThreadLifecycleActor } from "@bb/domain";
 import type { AppDeps } from "../../types.js";
 import {
   threadEnvironmentUnavailableDetails,
@@ -23,7 +24,14 @@ import {
   dispatchSettledArchivedThreadProviderArchiveCommand,
   requestActiveRuntimeThreadStopIfNeeded,
 } from "./thread-lifecycle.js";
-import { archiveThreadAndReleaseChildren } from "./thread-ownership.js";
+import {
+  archiveThreadAndReleaseChildren,
+  releaseUnarchivedChildrenFromArchivedThread,
+} from "./thread-ownership.js";
+import {
+  actorForRelatedThreads,
+  asThreadLifecycleApiError,
+} from "./thread-lifecycle-actor.js";
 import { requireThreadHostCommandEnvironment } from "./thread-command-environment.js";
 import { getActiveThreadProvisionContext } from "./thread-provisioning-active-context.js";
 import { isPreStartThreadStatus } from "./thread-status.js";
@@ -34,7 +42,10 @@ interface ArchiveThreadEnvironment {
 }
 
 interface ArchiveThreadWithLifecycleEffectsArgs {
+  actor: ThreadLifecycleActor;
   environment: ArchiveThreadEnvironment | null;
+  releaseChildren?: boolean;
+  skipProtected?: boolean;
   thread: Pick<Thread, "environmentId" | "id" | "status">;
 }
 
@@ -43,12 +54,17 @@ interface ResolveArchiveThreadEnvironmentArgs {
 }
 
 interface ArchiveEnvironmentThreadsArgs {
+  actor: ThreadLifecycleActor;
   environment: Environment;
 }
 
 interface ArchiveThreadAndChildrenArgs {
+  actor: ThreadLifecycleActor;
   parentThread: Thread;
 }
+
+type ArchiveThreadAndHiddenSourceForksArgs =
+  ArchiveThreadWithLifecycleEffectsArgs;
 
 export function resolveArchiveThreadEnvironment(
   deps: Pick<AppDeps, "db">,
@@ -76,9 +92,19 @@ function archiveThreadWithLifecycleEffects(
   deps: AppDeps,
   args: ArchiveThreadWithLifecycleEffectsArgs,
 ): Thread | null {
-  const archivedThread = archiveThreadAndReleaseChildren(deps, {
-    threadId: args.thread.id,
-  });
+  let archivedThread: Thread | null;
+  try {
+    archivedThread = archiveThreadAndReleaseChildren(deps, {
+      actor: args.actor,
+      releaseChildren: args.releaseChildren,
+      threadId: args.thread.id,
+    });
+  } catch (error) {
+    if (args.skipProtected && error instanceof ThreadLifecycleProtectedError) {
+      return null;
+    }
+    throw error;
+  }
   if (!archivedThread) {
     return null;
   }
@@ -108,21 +134,28 @@ function archiveThreadWithLifecycleEffects(
 
 export function archiveThreadAndHiddenSourceForks(
   deps: AppDeps,
-  args: ArchiveThreadWithLifecycleEffectsArgs,
+  args: ArchiveThreadAndHiddenSourceForksArgs,
 ): Thread | null {
-  const archivedThread = archiveThreadWithLifecycleEffects(deps, args);
-  if (!archivedThread) {
-    return null;
+  try {
+    const archivedThread = archiveThreadWithLifecycleEffects(deps, args);
+    if (!archivedThread) {
+      return null;
+    }
+    const relatedActor = actorForRelatedThreads(args.actor);
+    for (const fork of listUnarchivedHiddenSourceThreads(deps.db, {
+      sourceThreadId: archivedThread.id,
+    })) {
+      archiveThreadWithLifecycleEffects(deps, {
+        actor: relatedActor,
+        environment: resolveArchiveThreadEnvironment(deps, { thread: fork }),
+        skipProtected: true,
+        thread: fork,
+      });
+    }
+    return archivedThread;
+  } catch (error) {
+    asThreadLifecycleApiError(error);
   }
-  for (const fork of listUnarchivedHiddenSourceThreads(deps.db, {
-    sourceThreadId: archivedThread.id,
-  })) {
-    archiveThreadWithLifecycleEffects(deps, {
-      environment: resolveArchiveThreadEnvironment(deps, { thread: fork }),
-      thread: fork,
-    });
-  }
-  return archivedThread;
 }
 
 export function archiveEnvironmentThreads(
@@ -136,7 +169,9 @@ export function archiveEnvironmentThreads(
 
   for (const thread of threads) {
     const result = archiveThreadWithLifecycleEffects(deps, {
+      actor: args.actor,
       environment: args.environment,
+      skipProtected: true,
       thread,
     });
     if (!result) {
@@ -166,26 +201,53 @@ export function archiveThreadAndChildren(
   deps: AppDeps,
   args: ArchiveThreadAndChildrenArgs,
 ): string[] {
-  const childThreads = listUnarchivedAssignedChildThreads(deps.db, {
-    parentThreadId: args.parentThread.id,
-  });
-  const hiddenSourceThreads = listUnarchivedHiddenSourceThreads(deps.db, {
-    sourceThreadId: args.parentThread.id,
-  });
-  const threads: ArchiveThreadWithLifecycleEffectsArgs["thread"][] = [
-    ...childThreads,
-    ...hiddenSourceThreads,
-  ].filter((thread) => thread.id !== args.parentThread.id);
-  if (args.parentThread.archivedAt === null) {
-    threads.push(args.parentThread);
+  try {
+    return archiveThreadAndChildrenUnchecked(deps, args);
+  } catch (error) {
+    asThreadLifecycleApiError(error);
   }
+}
+
+function archiveThreadAndChildrenUnchecked(
+  deps: AppDeps,
+  args: ArchiveThreadAndChildrenArgs,
+): string[] {
   const archivedThreadIds: string[] = [];
   const affectedEnvironmentIds = new Set<string>();
+  const relatedThreads = [
+    ...listUnarchivedAssignedChildThreads(deps.db, {
+      parentThreadId: args.parentThread.id,
+    }),
+    ...listUnarchivedHiddenSourceThreads(deps.db, {
+      sourceThreadId: args.parentThread.id,
+    }),
+  ].filter((thread) => thread.id !== args.parentThread.id);
+  const parentAlreadyArchived = args.parentThread.archivedAt !== null;
+  if (!parentAlreadyArchived) {
+    const environment = resolveArchiveThreadEnvironment(deps, {
+      thread: args.parentThread,
+    });
+    const result = archiveThreadWithLifecycleEffects(deps, {
+      actor: args.actor,
+      environment,
+      releaseChildren: false,
+      thread: args.parentThread,
+    });
+    if (!result) {
+      return [];
+    }
+    if (environment !== null) {
+      affectedEnvironmentIds.add(environment.id);
+    }
+  }
 
-  for (const thread of threads) {
+  const relatedActor = actorForRelatedThreads(args.actor);
+  for (const thread of relatedThreads) {
     const environment = resolveArchiveThreadEnvironment(deps, { thread });
     const result = archiveThreadWithLifecycleEffects(deps, {
+      actor: relatedActor,
       environment,
+      skipProtected: true,
       thread,
     });
     if (!result) {
@@ -196,6 +258,10 @@ export function archiveThreadAndChildren(
       affectedEnvironmentIds.add(environment.id);
     }
   }
+  if (!parentAlreadyArchived) {
+    archivedThreadIds.push(args.parentThread.id);
+  }
+  releaseUnarchivedChildrenFromArchivedThread(deps, args.parentThread.id);
 
   for (const environmentId of affectedEnvironmentIds) {
     if (

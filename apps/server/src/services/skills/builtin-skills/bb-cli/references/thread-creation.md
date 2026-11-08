@@ -112,6 +112,15 @@ environment pull-request show <id>`. Diff commands require an explicit target
   and the matching merge-base or commit flags; all support `--json`.
 - `bb environment pull-request ready|draft|merge` manages pull-request state;
   `bb environment archive-threads` bulk-archives an environment's threads.
+  From the CLI that bulk command archives threads recorded as opened by the
+  CLI or a plugin. App-opened threads and threads with no recorded provenance
+  stay in place. It does not take an approval id.
+- `bb thread spawn` and `bb thread fork` record CLI provenance. Those threads
+  are not pinned by bb. Threads opened in the app are pinned once at creation;
+  a later unpin stays unpinned. App-opened threads and threads with no
+  recorded provenance are not archived or deleted by automation. `bb thread
+  archive --approval <id>` and `bb thread delete --approval <id>` present one
+  single-use approval for that thread and that action only.
 - Use `bb environment show|update|commit` for environment metadata
   and Git changes. Check live help before a commit or merge.
 - Spawned child threads inherit permission from explicit flags, then the

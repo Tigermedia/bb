@@ -18,6 +18,7 @@ import { createHostDaemonClient } from "@bb/host-daemon-contract";
 import { initDb } from "../../../apps/server/src/db.js";
 import { createLifecycleDedupers } from "../../../apps/server/src/lifecycle-dedupers.js";
 import { createApp } from "../../../apps/server/src/server.js";
+import { ownerLifecycleCookieHeader } from "../../../apps/server/src/services/threads/thread-lifecycle-actor.js";
 import { createAiServiceRegistry } from "../../../apps/server/src/services/ai/ai-service-registry.js";
 import { PendingInteractionLifecycle } from "../../../apps/server/src/services/interactions/pending-interactions.js";
 import { createMachineAuthService } from "../../../apps/server/src/services/machine-auth.js";
@@ -42,6 +43,7 @@ import { createBbAppManagedConfigReloader } from "../../../apps/server/src/servi
 import { createNoopTelemetryService } from "../../../apps/server/src/services/system/telemetry.js";
 import { TerminalSessionLifecycle } from "../../../apps/server/src/services/terminals/terminal-session-lifecycle.js";
 import type {
+  ServerAppDeps,
   ServerLogger,
   ServerRuntimeConfig,
 } from "../../../apps/server/src/types.js";
@@ -82,6 +84,7 @@ export interface RunningTestServer {
   db: DbConnection;
   hub: NotificationHub;
   machineAuth: Awaited<ReturnType<typeof createMachineAuthService>>;
+  ownerLifecycleSecret: string;
   providerRegistry: ProviderRegistryService;
 }
 
@@ -279,28 +282,29 @@ async function startIntegrationServer(
     config,
     logger: testLogger,
   });
+  const deps: ServerAppDeps = {
+    appVersion,
+    bbAppManagedConfig,
+    providerRegistry,
+    providerNativeRoots: createProviderNativeRootsCache(),
+    pluginHostArtifacts,
+    aiServices,
+    config,
+    db,
+    hub,
+    lifecycleDedupers,
+    logger: testLogger,
+    machineAuth,
+    pendingInteractions,
+    sharedPorts,
+    skillTreeRegistry,
+    telemetry,
+    terminalSessions,
+    watchInterests,
+    workspaceReadCaches,
+  };
   const { app, injectWebSocket } = createApp(
-    {
-      appVersion,
-      bbAppManagedConfig,
-      providerRegistry,
-      providerNativeRoots: createProviderNativeRootsCache(),
-      pluginHostArtifacts,
-      aiServices,
-      config,
-      db,
-      hub,
-      lifecycleDedupers,
-      logger: testLogger,
-      machineAuth,
-      pendingInteractions,
-      sharedPorts,
-      skillTreeRegistry,
-      telemetry,
-      terminalSessions,
-      watchInterests,
-      workspaceReadCaches,
-    },
+    deps,
     options.staticDir === undefined
       ? undefined
       : { staticDir: options.staticDir },
@@ -327,12 +331,16 @@ async function startIntegrationServer(
   config.serverPort = port;
   const baseUrl = `http://${TEST_SERVER_HOST}:${port}`;
 
+  if (!deps.ownerLifecycleSecret) {
+    throw new Error("Expected an owner lifecycle secret");
+  }
   return {
     baseUrl,
     config,
     db,
     hub,
     machineAuth,
+    ownerLifecycleSecret: deps.ownerLifecycleSecret,
     providerRegistry,
     async close(): Promise<void> {
       await new Promise<void>((resolve, reject) => {
@@ -515,7 +523,9 @@ export async function createIntegrationHarness(
   try {
     server = await startIntegrationServer(tmpRoot, options);
     const api = createPublicApiClient(server.baseUrl, {
-      fetch: createIntegrationFetch(),
+      fetch: createIntegrationFetch({
+        cookie: ownerLifecycleCookieHeader(server.ownerLifecycleSecret),
+      }),
     });
     daemonResources = await startHarnessDaemon(
       daemonDataDir,

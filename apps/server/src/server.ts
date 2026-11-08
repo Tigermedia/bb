@@ -1,6 +1,10 @@
 import { registerDesktopBrowserRoutes } from "./routes/desktop-browsers.js";
 import { createNodeWebSocket } from "@hono/node-ws";
 import { createHash } from "node:crypto";
+import {
+  APP_SURFACE_HEADER_NAME,
+  parseRequestAppSurface,
+} from "@bb/config/app-surface";
 import { readFile, stat } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
 import { extname, join, resolve } from "node:path";
@@ -11,6 +15,10 @@ import { compress } from "hono/compress";
 import { cors } from "hono/cors";
 import type { ServerAppDeps } from "./types.js";
 import { ApiError, errorToResponse } from "./errors.js";
+import {
+  ownerLifecycleSecretFor,
+  ownerLifecycleSetCookieHeader,
+} from "./services/threads/thread-lifecycle-actor.js";
 import { registerEnvironmentRoutes } from "./routes/environments.js";
 import { registerFileRoutes } from "./routes/files.js";
 import { registerHostRoutes } from "./routes/hosts.js";
@@ -410,6 +418,7 @@ export function createApp(
   deps: ServerAppDeps,
   options?: CreateAppOptions,
 ): ServerApp {
+  const ownerLifecycleSecret = ownerLifecycleSecretFor(deps);
   const app = new Hono();
   const { injectWebSocket, upgradeWebSocket, wss } = createNodeWebSocket({
     app,
@@ -500,6 +509,15 @@ export function createApp(
   app.use("/api/v1/*", async (context, next) => {
     const startedAt = performance.now();
     await next();
+    const surface = parseRequestAppSurface(
+      context.req.header(APP_SURFACE_HEADER_NAME),
+    );
+    if (surface === "desktop" || surface === "web" || surface === "mobile") {
+      context.header(
+        "set-cookie",
+        ownerLifecycleSetCookieHeader(ownerLifecycleSecret),
+      );
+    }
     const durationMs = performance.now() - startedAt;
     const path = context.req.path;
     if (

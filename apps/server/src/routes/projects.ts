@@ -73,6 +73,7 @@ import {
   beginProjectDeletion,
   requestProjectDeletionAdvance,
 } from "../services/projects/project-deletion.js";
+import { resolveThreadLifecycleActor } from "../services/threads/thread-lifecycle-actor.js";
 import { resolveDefaultWorktreeBaseBranch } from "../services/projects/worktree-base-branch.js";
 import { listProjectPromptHistory } from "../services/prompt-history.js";
 import { parsePathKindInclusion } from "./path-list-inclusion.js";
@@ -465,7 +466,10 @@ export function registerProjectRoutes(app: Hono, deps: AppDeps): void {
         "The personal project cannot be deleted",
       );
     }
-    beginProjectDeletion(deps, { projectId: id });
+    beginProjectDeletion(deps, {
+      actor: resolveThreadLifecycleActor(context, deps.ownerLifecycleSecret),
+      projectId: id,
+    });
     requestProjectDeletionAdvance(deps, { projectId: id });
     return context.json({ ok: true });
   });

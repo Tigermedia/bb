@@ -9,8 +9,7 @@ import {
 } from "@bb/db";
 import {
   defaultExperiments,
-  encodeClientTurnRequestIdNumber,
-} from "@bb/domain";
+  encodeClientTurnRequestIdNumber, ownerManualThreadLifecycleActor } from "@bb/domain";
 import { validatePluginProviderDeclaration } from "@get-bb/plugin-sdk/internal/host-policy";
 import { buildPluginProviderRegistration } from "../../src/services/providers/plugin-provider-registration.js";
 import type { DiscoveredSkill } from "@bb/host-daemon-contract";
@@ -588,7 +587,7 @@ describe("thread runtime config", () => {
         projectId: project.id,
         environmentId: environment.id,
       });
-      markThreadDeleted(harness.db, harness.hub, {
+      markThreadDeleted(harness.db, harness.hub, { actor: ownerManualThreadLifecycleActor, 
         threadId: deletedParent.id,
       });
       const childThread = seedThread(harness.deps, {

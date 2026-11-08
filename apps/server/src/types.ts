@@ -46,6 +46,7 @@ export interface ServerRuntimeConfig {
 export interface AppDeps {
   config: ServerRuntimeConfig;
   db: DbConnection;
+  ownerLifecycleSecret?: string;
   hub: NotificationHub;
   lifecycleDedupers: LifecycleDedupers;
   logger: ServerLogger;

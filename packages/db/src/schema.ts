@@ -12,6 +12,10 @@ import { sql } from "drizzle-orm";
 import type { AnySQLiteColumn } from "drizzle-orm/sqlite-core";
 import { threadStatusValues } from "@bb/domain/thread-status";
 import { threadOriginKindValues } from "@bb/domain/thread-origin-kind";
+import {
+  threadCreationProvenanceValues,
+  threadLifecycleActionValues,
+} from "@bb/domain/thread-origin-lifecycle";
 import { threadVisibilityValues } from "@bb/domain/thread-visibility";
 import type {
   EnvironmentStatus,
@@ -526,6 +530,9 @@ export const threads = sqliteTable(
       enum: threadOriginKindValues,
     }),
     originPluginId: text("origin_plugin_id"),
+    creationProvenance: text("creation_provenance", {
+      enum: threadCreationProvenanceValues,
+    }),
     visibility: text("visibility", { enum: threadVisibilityValues })
       .notNull()
       .default("visible"),
@@ -574,6 +581,25 @@ export const threads = sqliteTable(
     index("threads_active_maintenance_idx")
       .on(table.status)
       .where(sql`${table.deletedAt} IS NULL`),
+  ],
+);
+
+export const threadLifecycleApprovals = sqliteTable(
+  "thread_lifecycle_approvals",
+  {
+    id: text("id").primaryKey(),
+    threadId: text("thread_id")
+      .notNull()
+      .references(() => threads.id, { onDelete: "cascade" }),
+    action: text("action", { enum: threadLifecycleActionValues }).notNull(),
+    expiresAt: integer("expires_at").notNull(),
+    consumedAt: integer("consumed_at"),
+    issuedAt: integer("issued_at").notNull(),
+    sourceKind: text("source_kind").notNull(),
+    sourceRef: text("source_ref").notNull(),
+  },
+  (table) => [
+    index("thread_lifecycle_approvals_thread_idx").on(table.threadId),
   ],
 );
 

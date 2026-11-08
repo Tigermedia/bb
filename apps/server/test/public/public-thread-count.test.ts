@@ -1,3 +1,4 @@
+import { ownerManualThreadLifecycleActor } from "@bb/domain";
 import { archiveThread } from "@bb/db";
 import { threadCountResponseSchema } from "@bb/server-contract";
 import { describe, expect, it } from "vitest";
@@ -47,7 +48,7 @@ describe("GET /threads/count", () => {
         projectId: project.id,
         status: "idle",
       });
-      archiveThread(harness.db, harness.deps.hub, archived.id);
+      archiveThread(harness.db, harness.deps.hub, archived.id, ownerManualThreadLifecycleActor);
 
       expect(await count(harness, "")).toEqual({ total: 2 });
       expect(await count(harness, "?includeArchived=true")).toEqual({

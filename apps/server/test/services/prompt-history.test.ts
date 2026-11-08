@@ -12,7 +12,11 @@ import {
   promptHistoryEntries,
   upsertHost,
 } from "@bb/db";
-import type { PromptHistoryScope, PromptInput } from "@bb/domain";
+import {
+  ownerManualThreadLifecycleActor,
+  type PromptHistoryScope,
+  type PromptInput,
+} from "@bb/domain";
 import {
   listProjectPromptHistory,
   listThreadPromptHistory,
@@ -174,7 +178,7 @@ describe("prompt history service", () => {
       createdAt: 20,
       input: textInput("Archived starter prompt"),
     });
-    archiveThread(db, noopNotifier, archivedThread.id);
+    archiveThread(db, noopNotifier, archivedThread.id, ownerManualThreadLifecycleActor);
 
     expect(
       listProjectPromptHistory(
@@ -280,7 +284,7 @@ describe("prompt history service", () => {
       createdAt: 20,
       input: textInput("Deleted starter prompt"),
     });
-    markThreadDeleted(db, noopNotifier, { threadId: deletedThread.id });
+    markThreadDeleted(db, noopNotifier, { actor: ownerManualThreadLifecycleActor,  threadId: deletedThread.id });
 
     expect(
       listProjectPromptHistory(

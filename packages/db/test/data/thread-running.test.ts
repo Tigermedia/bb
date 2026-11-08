@@ -1,3 +1,4 @@
+import { ownerManualThreadLifecycleActor } from "@bb/domain";
 import { describe, expect, it } from "vitest";
 import { noopNotifier } from "../../src/notifier.js";
 import { createEnvironment } from "../../src/data/environments.js";
@@ -84,8 +85,8 @@ describe("listRunningThreads", () => {
     const hidden = make("hidden");
     const archived = make();
     const deleted = make();
-    archiveThread(db, noopNotifier, archived.id);
-    markThreadDeleted(db, noopNotifier, { threadId: deleted.id });
+    archiveThread(db, noopNotifier, archived.id, ownerManualThreadLifecycleActor);
+    markThreadDeleted(db, noopNotifier, { actor: ownerManualThreadLifecycleActor,  threadId: deleted.id });
 
     // A hidden thread burns a real slot on a real machine, so hiding it here
     // would under-report occupancy; archival and deletion actually stop one.

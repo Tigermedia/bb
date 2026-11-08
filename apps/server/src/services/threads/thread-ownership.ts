@@ -5,7 +5,12 @@ import {
   type DbTransaction,
   updateThread,
 } from "@bb/db";
-import type { PromptInput, SystemMessageSubject, Thread } from "@bb/domain";
+import type {
+  PromptInput,
+  SystemMessageSubject,
+  Thread,
+  ThreadLifecycleActor,
+} from "@bb/domain";
 import { renderTemplate } from "@bb/templates";
 import type { LoggedPendingInteractionWorkSessionDeps } from "../../types.js";
 import { NotificationBuffer } from "../lib/notification-buffer.js";
@@ -50,6 +55,8 @@ interface ReleaseUnarchivedChildrenFromArchivedThreadArgs {
 }
 
 interface ArchiveThreadAndReleaseChildrenArgs {
+  actor: ThreadLifecycleActor;
+  releaseChildren?: boolean;
   threadId: string;
 }
 
@@ -184,20 +191,23 @@ export function archiveThreadAndReleaseChildren(
         tx,
         notificationBuffer,
         args.threadId,
+        args.actor,
       );
       if (!archivedThread) {
         return null;
       }
 
-      releaseUnarchivedChildrenFromArchivedThreadInTransaction(
-        {
-          db: tx,
-          hub: notificationBuffer,
-        },
-        {
-          parentThreadId: archivedThread.id,
-        },
-      );
+      if (args.releaseChildren !== false) {
+        releaseUnarchivedChildrenFromArchivedThreadInTransaction(
+          {
+            db: tx,
+            hub: notificationBuffer,
+          },
+          {
+            parentThreadId: archivedThread.id,
+          },
+        );
+      }
 
       return archivedThread;
     },
@@ -206,4 +216,24 @@ export function archiveThreadAndReleaseChildren(
 
   notificationBuffer.flushInto(deps.hub);
   return result;
+}
+
+export function releaseUnarchivedChildrenFromArchivedThread(
+  deps: Pick<LoggedPendingInteractionWorkSessionDeps, "db" | "hub">,
+  parentThreadId: string,
+): void {
+  const notificationBuffer = new NotificationBuffer();
+  deps.db.transaction(
+    (tx) => {
+      releaseUnarchivedChildrenFromArchivedThreadInTransaction(
+        {
+          db: tx,
+          hub: notificationBuffer,
+        },
+        { parentThreadId },
+      );
+    },
+    { behavior: "immediate" },
+  );
+  notificationBuffer.flushInto(deps.hub);
 }

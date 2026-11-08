@@ -875,6 +875,7 @@ describe("server-contract canonical schemas", () => {
           sourceThreadId: null,
           originKind: null,
           originPluginId: null,
+          creationProvenance: null,
           visibility: "visible",
           archivedAt: null,
           pinnedAt: null,

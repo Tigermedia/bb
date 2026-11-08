@@ -171,6 +171,7 @@ function toPublicThread(thread: Thread): Thread {
     sourceThreadId: thread.sourceThreadId,
     originKind: thread.originKind,
     originPluginId: thread.originPluginId,
+    creationProvenance: thread.creationProvenance,
     visibility: thread.visibility,
     archivedAt: thread.archivedAt,
     pinnedAt: thread.pinnedAt,

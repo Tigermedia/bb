@@ -1,3 +1,4 @@
+import { ownerManualThreadLifecycleActor } from "@bb/domain";
 import { getStoredThreadTabs, markThreadDeleted } from "@bb/db";
 import {
   desktopBrowserLeaseSchema,
@@ -618,7 +619,7 @@ describe("desktop browser public API", () => {
   it("releases an existing native lease after its thread is deleted and keeps repeated cleanup idempotent", async () => {
     await withBrowserTest(async (test, harness) => {
       const lease = await test.acquire();
-      markThreadDeleted(harness.db, harness.hub, {
+      markThreadDeleted(harness.db, harness.hub, { actor: ownerManualThreadLifecycleActor, 
         threadId: test.scope.threadId,
       });
       const before = test.responder.requests.length;

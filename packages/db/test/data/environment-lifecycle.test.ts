@@ -1,3 +1,4 @@
+import { ownerManualThreadLifecycleActor } from "@bb/domain";
 import { describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import type { DbTransaction } from "../../src/connection.js";
@@ -287,7 +288,7 @@ describe("applyEnvironmentLifecycleEvent", () => {
       }),
     );
     expect(getThread(db, thread.id)?.status).toBe("stopping");
-    markThreadDeleted(db, noopNotifier, { threadId: thread.id });
+    markThreadDeleted(db, noopNotifier, { actor: ownerManualThreadLifecycleActor,  threadId: thread.id });
     const blockedByStop = applyEnvironmentLifecycleEvent(db, noopNotifier, {
       environmentId: environment.id,
       event: { type: "destroy.started", destroyAttemptId: "rpc_claim" },

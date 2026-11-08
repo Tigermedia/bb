@@ -1,3 +1,4 @@
+import { ownerManualThreadLifecycleActor } from "@bb/domain";
 import { archiveThread } from "@bb/db";
 import { threadSearchResponseSchema } from "@bb/server-contract";
 import { describe, expect, it } from "vitest";
@@ -26,7 +27,7 @@ describe("public thread search route", () => {
         title: "routearchived",
         titleFallback: "routearchived",
       });
-      archiveThread(harness.deps.db, harness.deps.hub, archivedThread.id);
+      archiveThread(harness.deps.db, harness.deps.hub, archivedThread.id, ownerManualThreadLifecycleActor);
       const hiddenThread = seedThread(harness.deps, {
         projectId: project.id,
         title: "routehidden",
@@ -39,7 +40,7 @@ describe("public thread search route", () => {
         titleFallback: "routehiddenarchived",
         visibility: "hidden",
       });
-      archiveThread(harness.deps.db, harness.deps.hub, hiddenArchivedThread.id);
+      archiveThread(harness.deps.db, harness.deps.hub, hiddenArchivedThread.id, ownerManualThreadLifecycleActor);
 
       const response = await harness.app.request(
         "/api/v1/threads/search?query=route&limitPerGroup=10",

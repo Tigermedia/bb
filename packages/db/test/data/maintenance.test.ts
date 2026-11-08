@@ -1,3 +1,4 @@
+import { ownerManualThreadLifecycleActor } from "@bb/domain";
 import Database from "better-sqlite3";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -134,7 +135,7 @@ describe("database maintenance", () => {
     expect(threadActivity.activeThreadCount).toBe(1);
     expect(isDatabaseMaintenanceIdle(threadActivity)).toBe(false);
 
-    markThreadDeleted(db, noopNotifier, { threadId: activeThread.id });
+    markThreadDeleted(db, noopNotifier, { actor: ownerManualThreadLifecycleActor,  threadId: activeThread.id });
     expect(isDatabaseMaintenanceIdle(getDatabaseMaintenanceActivity(db))).toBe(
       true,
     );

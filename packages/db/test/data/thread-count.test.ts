@@ -1,3 +1,4 @@
+import { ownerManualThreadLifecycleActor } from "@bb/domain";
 import { describe, expect, it } from "vitest";
 import { noopNotifier } from "../../src/notifier.js";
 import { createEnvironment } from "../../src/data/environments.js";
@@ -76,8 +77,8 @@ describe("countThreads", () => {
       status: "active",
       visibility: "hidden",
     });
-    archiveThread(db, noopNotifier, archived.id);
-    markThreadDeleted(db, noopNotifier, { threadId: deleted.id });
+    archiveThread(db, noopNotifier, archived.id, ownerManualThreadLifecycleActor);
+    markThreadDeleted(db, noopNotifier, { actor: ownerManualThreadLifecycleActor,  threadId: deleted.id });
 
     expect(countThreads(db, {})).toEqual({ total: 1 });
     // Archived rows are countable on request; deleted ones never are.

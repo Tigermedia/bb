@@ -5,8 +5,7 @@ import {
   encodeClientTurnRequestIdNumber,
   threadScope,
   turnScope,
-  type PromptInput,
-} from "@bb/domain";
+  type PromptInput, ownerManualThreadLifecycleActor } from "@bb/domain";
 import { createConnection } from "../../src/connection.js";
 import { noopNotifier } from "../../src/notifier.js";
 import {
@@ -245,7 +244,7 @@ describe("thread search data", () => {
         providerId: "codex",
         title: "archivewriterneedle",
       });
-      archiveThread(db, noopNotifier, archivedThread.id);
+      archiveThread(db, noopNotifier, archivedThread.id, ownerManualThreadLifecycleActor);
 
       const deletedThread = createThread(db, noopNotifier, {
         projectId: project.id,
@@ -266,7 +265,7 @@ describe("thread search data", () => {
         title: "hiddenarchivedwriterneedle",
         visibility: "hidden",
       });
-      archiveThread(db, noopNotifier, hiddenArchivedThread.id);
+      archiveThread(db, noopNotifier, hiddenArchivedThread.id, ownerManualThreadLifecycleActor);
 
       const activeResults = searchThreadsWithPendingInteractionState(db, {
         query: "livewriterneedle",
@@ -431,7 +430,7 @@ describe("thread search data", () => {
           providerId: "codex",
           title: `partitionneedle archived ${index}`,
         });
-        archiveThread(db, noopNotifier, archivedThread.id);
+        archiveThread(db, noopNotifier, archivedThread.id, ownerManualThreadLifecycleActor);
         archivedIds.push(archivedThread.id);
       }
 

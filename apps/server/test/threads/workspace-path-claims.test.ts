@@ -1,3 +1,4 @@
+import { ownerManualThreadLifecycleActor } from "@bb/domain";
 import { archiveThread, markThreadDeleted, unarchiveThread } from "@bb/db";
 import { describe, expect, it } from "vitest";
 import { unmanagedAttachRefusal } from "../../src/services/threads/workspace-path-claims.js";
@@ -177,7 +178,7 @@ describe("unmanagedAttachRefusal", () => {
         projectId: project.id,
       };
 
-      archiveThread(harness.deps.db, harness.deps.hub, thread.id);
+      archiveThread(harness.deps.db, harness.deps.hub, thread.id, ownerManualThreadLifecycleActor);
       expect(unmanagedAttachRefusal(harness.deps.db, args)).toBeNull();
 
       unarchiveThread(harness.deps.db, harness.deps.hub, thread.id);
@@ -185,7 +186,7 @@ describe("unmanagedAttachRefusal", () => {
         reason: "live-thread",
       });
 
-      markThreadDeleted(harness.deps.db, harness.deps.hub, {
+      markThreadDeleted(harness.deps.db, harness.deps.hub, { actor: ownerManualThreadLifecycleActor, 
         threadId: thread.id,
       });
       expect(unmanagedAttachRefusal(harness.deps.db, args)).toBeNull();

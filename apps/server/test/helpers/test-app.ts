@@ -7,6 +7,7 @@ import { createConnection, type DbConnection } from "@bb/db";
 import { defaultFeatureFlags, type HostType } from "@bb/domain";
 import { initDb } from "../../src/db.js";
 import { createApp } from "../../src/server.js";
+import { ownerLifecycleCookieHeader } from "../../src/services/threads/thread-lifecycle-actor.js";
 import { PendingInteractionLifecycle } from "../../src/services/interactions/pending-interactions.js";
 import { createMachineAuthService } from "../../src/services/machine-auth.js";
 import { createProviderRegistryService } from "../../src/services/providers/provider-registry.js";
@@ -271,6 +272,23 @@ export async function createTestAppHarness(
     workspaceReadCaches,
   };
   const { app, pluginCatalogService, pluginService } = createApp(deps);
+  if (!deps.ownerLifecycleSecret) {
+    throw new Error("Expected an owner lifecycle secret");
+  }
+  const ownerCookie = ownerLifecycleCookieHeader(deps.ownerLifecycleSecret);
+  const request = app.request.bind(app);
+  app.request = (async (input: Request | string, init?: RequestInit) => {
+    const headers = new Headers(
+      init?.headers ?? (input instanceof Request ? input.headers : undefined),
+    );
+    if (headers.get("x-bb-lifecycle-test-actor") === "automation") {
+      headers.delete("x-bb-lifecycle-test-actor");
+      headers.delete("cookie");
+    } else if (!headers.has("cookie")) {
+      headers.set("cookie", ownerCookie);
+    }
+    return request(input, { ...init, headers });
+  }) as typeof app.request;
 
   return {
     app,

@@ -8,7 +8,10 @@ import {
 } from "@bb/db";
 import type { DbNotifier } from "@bb/db";
 import type { HostDaemonCommand } from "@bb/host-daemon-contract";
-import type { LocalPathProjectSource } from "@bb/domain";
+import {
+  creationProvenanceForCreateOrigin,
+  type LocalPathProjectSource,
+} from "@bb/domain";
 import type { BaseBranchSpec } from "@bb/server-contract";
 import type { AppDeps } from "../../types.js";
 import { ApiError } from "../../errors.js";
@@ -171,6 +174,9 @@ export function createThreadRecord(
       sourceThreadId: args.request.sourceThreadId ?? null,
       originKind: args.request.originKind,
       originPluginId: args.request.originPluginId ?? null,
+      creationProvenance: creationProvenanceForCreateOrigin(
+        args.request.origin,
+      ),
       visibility: args.request.visibility,
       // Every thread starts `pending`, with no exception to parameterise.
       // Creation is unhooked and provisions nothing; admission happens at the

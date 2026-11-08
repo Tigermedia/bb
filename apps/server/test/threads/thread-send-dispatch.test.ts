@@ -1,5 +1,4 @@
-import {
-  archiveThread,
+import { archiveThread,
   getQueuedThreadMessage,
   getThread,
   listEvents,
@@ -13,8 +12,7 @@ import {
   turnScope,
   type Environment,
   type Thread,
-  type ThreadChangedMessage,
-} from "@bb/domain";
+  type ThreadChangedMessage, ownerManualThreadLifecycleActor } from "@bb/domain";
 import { groupHostDaemonEvents } from "@bb/host-daemon-contract";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { TelemetryService } from "../../src/services/system/telemetry.js";
@@ -146,7 +144,7 @@ describe("queued message dispatch hook", () => {
         content: textInput("queued while idle"),
       });
 
-      archiveThread(harness.db, harness.hub, thread.id);
+      archiveThread(harness.db, harness.hub, thread.id, ownerManualThreadLifecycleActor);
       expect(getThread(harness.db, thread.id)).toMatchObject({
         status: "idle",
         archivedAt: expect.any(Number),
@@ -193,7 +191,7 @@ describe("queued message dispatch hook", () => {
         content: textInput("queued while idle"),
       });
 
-      markThreadDeleted(harness.db, harness.hub, { threadId: thread.id });
+      markThreadDeleted(harness.db, harness.hub, { actor: ownerManualThreadLifecycleActor,  threadId: thread.id });
 
       await expect(
         sendQueuedMessage(harness.deps, {
@@ -479,9 +477,9 @@ describe("startup queue waits", () => {
           value: operation === "archive" ? 63 : 64,
         });
         if (operation === "archive") {
-          archiveThread(harness.db, harness.hub, thread.id);
+          archiveThread(harness.db, harness.hub, thread.id, ownerManualThreadLifecycleActor);
         } else {
-          markThreadDeleted(harness.db, harness.hub, {
+          markThreadDeleted(harness.db, harness.hub, { actor: ownerManualThreadLifecycleActor, 
             threadId: thread.id,
           });
         }
@@ -924,7 +922,7 @@ describe("startup queue waits", () => {
         systemMessageKind: "child-completed",
         systemMessageSubject: null,
       });
-      archiveThread(harness.db, harness.hub, thread.id);
+      archiveThread(harness.db, harness.hub, thread.id, ownerManualThreadLifecycleActor);
 
       await expect(delivered).resolves.toBe(false);
       expect(listQueuedThreadMessages(harness.db, thread.id)).toEqual([]);

@@ -32,6 +32,7 @@ import type {
   ThreadEventScope,
   ThreadEventItemType,
   ThreadEventType,
+  ThreadCreationProvenance,
   ThreadOriginKind,
   ThreadStatus,
   ThreadVisibility,
@@ -189,6 +190,7 @@ export function seedThread(
     sourceThreadId?: string | null;
     originKind?: ThreadOriginKind | null;
     originPluginId?: string | null;
+    creationProvenance?: ThreadCreationProvenance | null;
     titleFallback?: string | null;
     visibility?: ThreadVisibility;
   },
@@ -204,6 +206,7 @@ export function seedThread(
     sourceThreadId: args.sourceThreadId ?? null,
     originKind: args.originKind ?? null,
     originPluginId: args.originPluginId ?? null,
+    creationProvenance: args.creationProvenance ?? null,
     visibility: args.visibility ?? "visible",
   });
 }

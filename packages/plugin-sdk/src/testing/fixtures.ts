@@ -71,6 +71,7 @@ export function makeThreadResponse(
     sourceThreadId: null,
     originKind: null,
     originPluginId: null,
+    creationProvenance: null,
     visibility: "visible",
     archivedAt: null,
     pinnedAt: null,

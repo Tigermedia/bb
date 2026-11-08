@@ -69,6 +69,7 @@ import {
   archiveThreadAndHiddenSourceForks,
   resolveArchiveThreadEnvironment,
 } from "../../services/threads/thread-archive.js";
+import { resolveThreadLifecycleActor } from "../../services/threads/thread-lifecycle-actor.js";
 import {
   requireThreadCommandEnvironment,
   requireThreadHostCommandEnvironment,
@@ -550,6 +551,7 @@ export function registerThreadActionRoutes(app: Hono, deps: AppDeps): void {
     });
     const environment = resolveArchiveThreadEnvironment(deps, { thread });
     const archiveResult = archiveThreadAndHiddenSourceForks(deps, {
+      actor: resolveThreadLifecycleActor(context, deps.ownerLifecycleSecret),
       environment,
       thread,
     });
@@ -569,7 +571,12 @@ export function registerThreadActionRoutes(app: Hono, deps: AppDeps): void {
 
   post(routes.archiveAll, (context) => {
     const thread = requirePublicThread(deps.db, context.req.param("id"));
+    const actor = resolveThreadLifecycleActor(
+      context,
+      deps.ownerLifecycleSecret,
+    );
     const archivedThreadIds = archiveThreadAndChildren(deps, {
+      actor,
       parentThread: thread,
     });
     return context.json({

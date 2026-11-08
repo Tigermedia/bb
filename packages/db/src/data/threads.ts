@@ -20,6 +20,8 @@ import type {
   ThreadChangeKind,
   ThreadLifecycleEvent,
   ThreadLifecycleNoopReason,
+  ThreadCreationProvenance,
+  ThreadLifecycleActor,
   ThreadOriginKind,
   ThreadSearchSourceKind,
   ThreadStatus,
@@ -42,6 +44,7 @@ import {
   threads,
 } from "../schema.js";
 import { createThreadId } from "../ids.js";
+import { authorizeThreadLifecycleMutation } from "./thread-lifecycle-guard.js";
 import {
   createOrderKeyBetween,
 } from "./order-keys.js";
@@ -270,6 +273,7 @@ export interface CreateThreadInput {
   sourceThreadId?: string | null;
   originKind?: ThreadOriginKind | null;
   originPluginId?: string | null;
+  creationProvenance?: ThreadCreationProvenance | null;
   visibility?: ThreadVisibility;
 }
 
@@ -282,8 +286,12 @@ export function createThread(
   const now = Date.now();
   const id = createThreadId();
   const originKind = input.originKind ?? null;
+  const creationProvenance = input.creationProvenance ?? null;
   const thread = db.transaction(
     (tx) => {
+      const pinOnCreate =
+        creationProvenance === "manual" && visibility === "visible";
+      const firstPinnedThread = pinOnCreate ? getFirstPinnedThread(tx) : null;
       const createdThread = tx
         .insert(threads)
         .values({
@@ -302,7 +310,15 @@ export function createThread(
             (originKind === null ? null : input.parentThreadId ?? null),
           originKind,
           originPluginId: input.originPluginId ?? null,
+          creationProvenance,
           visibility,
+          pinnedAt: pinOnCreate ? now : null,
+          pinSortKey: pinOnCreate
+            ? createOrderKeyBetween({
+                previousKey: null,
+                nextKey: firstPinnedThread?.pinSortKey ?? null,
+              })
+            : null,
           lastReadAt: now,
           latestAttentionAt: now,
           createdAt: now,
@@ -596,6 +612,7 @@ export interface ListNonDeletedChildThreadsArgs {
 }
 
 export interface MarkThreadDeletedArgs {
+  actor: ThreadLifecycleActor;
   deletedAt?: number;
   threadId: string;
 }
@@ -1979,15 +1996,37 @@ export function markThreadDeleted(
   notifier: DbNotifier,
   args: MarkThreadDeletedArgs,
 ) {
-  const updated = db
-    .update(threads)
-    .set({
-      deletedAt: args.deletedAt ?? Date.now(),
-      updatedAt: Date.now(),
-    })
-    .where(eq(threads.id, args.threadId))
-    .returning()
-    .get();
+  const now = Date.now();
+  const updated = db.transaction(
+    (tx) => {
+      const existing = tx
+        .select()
+        .from(threads)
+        .where(eq(threads.id, args.threadId))
+        .get();
+      if (!existing) return null;
+      if (existing.deletedAt === null) {
+        authorizeThreadLifecycleMutation(tx, {
+          action: "close",
+          actor: args.actor,
+          now,
+          thread: existing,
+        });
+      }
+      return (
+        tx
+          .update(threads)
+          .set({
+            deletedAt: args.deletedAt ?? now,
+            updatedAt: now,
+          })
+          .where(eq(threads.id, args.threadId))
+          .returning()
+          .get() ?? null
+      );
+    },
+    { behavior: "immediate" },
+  );
 
   if (updated) {
     notifier.notifyThread(args.threadId, ["thread-deleted"], {
@@ -2003,14 +2042,32 @@ export function archiveThread(
   db: ThreadWriteConnection,
   notifier: DbNotifier,
   id: string,
+  actor: ThreadLifecycleActor,
 ) {
   const now = Date.now();
-  const updated = db
-    .update(threads)
-    .set({ archivedAt: now, updatedAt: now })
-    .where(eq(threads.id, id))
-    .returning()
-    .get();
+  const updated = db.transaction(
+    (tx) => {
+      const existing = tx.select().from(threads).where(eq(threads.id, id)).get();
+      if (!existing) return null;
+      if (existing.archivedAt === null) {
+        authorizeThreadLifecycleMutation(tx, {
+          action: "archive",
+          actor,
+          now,
+          thread: existing,
+        });
+      }
+      return (
+        tx
+          .update(threads)
+          .set({ archivedAt: now, updatedAt: now })
+          .where(eq(threads.id, id))
+          .returning()
+          .get() ?? null
+      );
+    },
+    { behavior: "immediate" },
+  );
   if (updated) {
     notifier.notifyThread(id, ["archived-changed"], {
       projectId: updated.projectId,

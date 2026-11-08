@@ -9,7 +9,13 @@ import {
   threads,
   type DbQueryConnection,
 } from "@bb/db";
-import type { Environment, Thread, ThreadStatus } from "@bb/domain";
+import {
+  ownerManualThreadLifecycleActor,
+  type Environment,
+  type Thread,
+  type ThreadLifecycleActor,
+  type ThreadStatus,
+} from "@bb/domain";
 import type {
   AppDeps,
   LoggedPendingInteractionWorkSessionDeps,
@@ -26,9 +32,14 @@ import {
 } from "../threads/thread-lifecycle.js";
 import { NotificationBuffer } from "../lib/notification-buffer.js";
 import { emitPluginThreadDeleted } from "../plugins/plugin-thread-events.js";
+import { asThreadLifecycleApiError } from "../threads/thread-lifecycle-actor.js";
 
 interface ProjectDeletionArgs {
   projectId: string;
+}
+
+interface BeginProjectDeletionArgs extends ProjectDeletionArgs {
+  actor: ThreadLifecycleActor;
 }
 
 interface ProjectDeletionThread {
@@ -66,25 +77,25 @@ function listProjectDeletionThreads(
 
 function tombstoneProjectThreadsForDeletion(
   deps: Pick<AppDeps, "db" | "hub">,
-  args: ProjectDeletionArgs,
+  args: BeginProjectDeletionArgs,
 ): { deletedThreads: Thread[]; projectThreads: ProjectDeletionThread[] } {
   const notificationBuffer = new NotificationBuffer();
   const result = deps.db.transaction(
     (tx) => {
-      markProjectDeleted(tx, notificationBuffer, {
-        projectId: args.projectId,
-      });
-
       const deletedThreads: Thread[] = [];
       const threadsForDeletion = listProjectDeletionThreads(tx, args);
       for (const thread of threadsForDeletion) {
         if (thread.deletedAt === null) {
           const deletedThread = markThreadDeleted(tx, notificationBuffer, {
+            actor: args.actor,
             threadId: thread.id,
           });
           if (deletedThread) deletedThreads.push(deletedThread);
         }
       }
+      markProjectDeleted(tx, notificationBuffer, {
+        projectId: args.projectId,
+      });
       return { deletedThreads, projectThreads: threadsForDeletion };
     },
     { behavior: "immediate" },
@@ -115,7 +126,18 @@ function hasRemainingManagedEnvironments(environments: Environment[]): boolean {
 
 export function beginProjectDeletion(
   deps: ProjectDeletionDeps,
-  args: ProjectDeletionArgs,
+  args: BeginProjectDeletionArgs,
+): void {
+  try {
+    beginProjectDeletionUnchecked(deps, args);
+  } catch (error) {
+    asThreadLifecycleApiError(error);
+  }
+}
+
+function beginProjectDeletionUnchecked(
+  deps: ProjectDeletionDeps,
+  args: BeginProjectDeletionArgs,
 ): void {
   if (!getProject(deps.db, args.projectId)) {
     return;
@@ -179,6 +201,7 @@ export async function advanceProjectDeletion(
 
     if (thread.deletedAt === null) {
       const deletedThread = markThreadDeleted(deps.db, deps.hub, {
+        actor: ownerManualThreadLifecycleActor,
         threadId: thread.id,
       });
       if (deletedThread) emitPluginThreadDeleted(deletedThread);

@@ -73,7 +73,11 @@ import type {
   UpdateThreadRequest,
   UpdateQueuedMessageRequest,
 } from "@bb/server-contract";
-import { signalRequestArgs, type CreateSdkAreaArgs } from "./common.js";
+import {
+  lifecycleApprovalRequestArgs,
+  signalRequestArgs,
+  type CreateSdkAreaArgs,
+} from "./common.js";
 
 export const DEFAULT_THREAD_WAIT_TIMEOUT_MS = 20 * 60 * 1000;
 export const DEFAULT_THREAD_WAIT_POLL_INTERVAL_MS = 250;
@@ -240,6 +244,7 @@ export interface ThreadUpdateArgs extends UpdateThreadRequest {
 }
 
 export interface ThreadDeleteArgs extends DeleteThreadRequest {
+  approvalId?: string;
   threadId: string;
 }
 
@@ -270,6 +275,10 @@ export interface ThreadRetryArgs {
 
 export interface ThreadActionArgs {
   threadId: string;
+}
+
+export interface ThreadLifecycleMutationArgs extends ThreadActionArgs {
+  approvalId?: string;
 }
 
 export interface ThreadStatusArgs extends ThreadActionArgs {
@@ -524,8 +533,8 @@ export interface ThreadQueueArea {
 }
 
 export interface ThreadsArea {
-  archive(args: ThreadActionArgs): Promise<ThreadArchiveResult>;
-  archiveAll(args: ThreadActionArgs): Promise<ThreadArchiveAllResult>;
+  archive(args: ThreadLifecycleMutationArgs): Promise<ThreadArchiveResult>;
+  archiveAll(args: ThreadLifecycleMutationArgs): Promise<ThreadArchiveAllResult>;
   childSummary(args: ThreadStatusArgs): Promise<ThreadChildSummaryResult>;
   compact(args: ThreadActionArgs): Promise<ThreadCompactResult>;
   cancelPlan(args: ThreadActionArgs): Promise<ThreadBannerActionResult>;
@@ -1034,16 +1043,18 @@ export function createThreadsArea(args: CreateSdkAreaArgs): ThreadsArea {
   return {
     async archive(input) {
       return transport.readJson(
-        transport.api.v1.threads[":id"]["archive-all"].$post({
-          param: { id: input.threadId },
-        }),
+        transport.api.v1.threads[":id"]["archive-all"].$post(
+          { param: { id: input.threadId } },
+          ...lifecycleApprovalRequestArgs(input.approvalId),
+        ),
       );
     },
     async archiveAll(input) {
       return transport.readJson(
-        transport.api.v1.threads[":id"]["archive-all"].$post({
-          param: { id: input.threadId },
-        }),
+        transport.api.v1.threads[":id"]["archive-all"].$post(
+          { param: { id: input.threadId } },
+          ...lifecycleApprovalRequestArgs(input.approvalId),
+        ),
       );
     },
     async childSummary(input) {
@@ -1088,12 +1099,15 @@ export function createThreadsArea(args: CreateSdkAreaArgs): ThreadsArea {
     },
     async delete(input) {
       await transport.readVoid(
-        transport.api.v1.threads[":id"].$delete({
-          param: { id: input.threadId },
-          json: {
-            childThreadsConfirmed: input.childThreadsConfirmed,
+        transport.api.v1.threads[":id"].$delete(
+          {
+            param: { id: input.threadId },
+            json: {
+              childThreadsConfirmed: input.childThreadsConfirmed,
+            },
           },
-        }),
+          ...lifecycleApprovalRequestArgs(input.approvalId),
+        ),
       );
       return { ok: true };
     },

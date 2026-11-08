@@ -56,6 +56,24 @@ describe("bb thread action command output", () => {
     );
   });
 
+  it("bb thread archive --approval sends only that approval header", async () => {
+    const archivePost = vi.fn(async () => ({
+      ok: true,
+      archivedThreadIds: ["thread-archive-1"],
+    }));
+    stubServerApi({ "v1.threads.:id.archive-all.$post": archivePost });
+
+    await runCommand(
+      ["thread", "archive", "thread-archive-1", "--approval", "tlap_test"],
+      register,
+    );
+
+    expect(archivePost).toHaveBeenCalledWith(
+      { param: { id: "thread-archive-1" } },
+      { init: { headers: { "x-bb-lifecycle-approval": "tlap_test" } } },
+    );
+  });
+
   it("bb thread archive --self resolves from BB_THREAD_ID", async () => {
     vi.stubEnv("BB_THREAD_ID", "thread-archive-2");
     const archivePost = vi.fn(async () => ({
@@ -351,6 +369,42 @@ describe("bb thread action command output", () => {
       param: { id: "thread-delete-3" },
       json: { childThreadsConfirmed: false },
     });
+  });
+
+  it("bb thread delete --approval sends only that approval header", async () => {
+    const thread: domain.Thread = fixtures.makeThread({
+      id: "thread-delete-approval",
+      projectId: "proj-1",
+      providerId: "codex",
+      status: "idle",
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    const deleteFn = vi.fn(async () => ({ ok: true }));
+    stubServerApi({
+      "v1.threads.:id.$get": vi.fn(async () => thread),
+      "v1.threads.:id.$delete": deleteFn,
+    });
+
+    await runCommand(
+      [
+        "thread",
+        "delete",
+        "thread-delete-approval",
+        "--yes",
+        "--approval",
+        "tlap_close",
+      ],
+      register,
+    );
+
+    expect(deleteFn).toHaveBeenCalledWith(
+      {
+        param: { id: "thread-delete-approval" },
+        json: { childThreadsConfirmed: false },
+      },
+      { init: { headers: { "x-bb-lifecycle-approval": "tlap_close" } } },
+    );
   });
 
   it("bb thread delete forwards explicit child-thread confirmation", async () => {

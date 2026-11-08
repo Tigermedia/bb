@@ -1,3 +1,4 @@
+import { ownerManualThreadLifecycleActor } from "@bb/domain";
 import { sql } from "drizzle-orm";
 import { listEvents, listQueuedThreadMessages, markThreadDeleted } from "@bb/db";
 import { describe, expect, it } from "vitest";
@@ -164,7 +165,7 @@ describe("deliverLegacyDeferredThreadMessages", () => {
           },
         },
       });
-      markThreadDeleted(harness.db, harness.deps.hub, { threadId: thread.id });
+      markThreadDeleted(harness.db, harness.deps.hub, { actor: ownerManualThreadLifecycleActor,  threadId: thread.id });
 
       await deliverLegacyDeferredThreadMessages(harness.deps);
 

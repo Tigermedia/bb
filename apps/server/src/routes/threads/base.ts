@@ -32,6 +32,10 @@ import {
 import type { Hono } from "hono";
 import type { AppDeps } from "../../types.js";
 import { ApiError } from "../../errors.js";
+import {
+  asThreadLifecycleApiError,
+  resolveThreadLifecycleActor,
+} from "../../services/threads/thread-lifecycle-actor.js";
 import { parseOptionalInteger } from "../../services/lib/validation.js";
 import {
   requestEnvironmentCleanup,
@@ -468,9 +472,15 @@ export function registerThreadBaseRoutes(app: Hono, deps: AppDeps): void {
       deps,
       thread,
     });
-    const deletedThread = markThreadDeleted(deps.db, deps.hub, {
-      threadId: thread.id,
-    });
+    let deletedThread;
+    try {
+      deletedThread = markThreadDeleted(deps.db, deps.hub, {
+        actor: resolveThreadLifecycleActor(context, deps.ownerLifecycleSecret),
+        threadId: thread.id,
+      });
+    } catch (error) {
+      asThreadLifecycleApiError(error);
+    }
     if (deletedThread) emitPluginThreadDeleted(deletedThread);
     deps.terminalSessions.closeDeletedThreadTerminals({ threadId: thread.id });
     if (thread.environmentId === null) {

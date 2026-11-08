@@ -97,6 +97,11 @@ export {
   THREAD_SEARCH_LIMIT_PER_GROUP_DEFAULT,
   THREAD_SEARCH_LIMIT_PER_GROUP_MAX,
 } from "./threads.js";
+export {
+  issueThreadLifecycleApproval,
+  ThreadLifecycleProtectedError,
+} from "./thread-lifecycle-guard.js";
+export type { IssueThreadLifecycleApprovalArgs } from "./thread-lifecycle-guard.js";
 export type {
   ApplyThreadLifecycleEventArgs,
   ApplyThreadLifecycleEventOutcome,

@@ -11,7 +11,7 @@
  * two can never disagree.
  */
 import { describe, expect, it } from "vitest";
-import type { PromptInput } from "@bb/domain";
+import { ownerManualThreadLifecycleActor, type PromptInput } from "@bb/domain";
 import { noopNotifier } from "../../src/notifier.js";
 import {
   claimQueuedThreadMessage,
@@ -276,8 +276,21 @@ describe("listDueScheduledQueuedThreadMessages", () => {
   it("skips rows on archived and deleted threads", () => {
     const { db, project } = setup();
     for (const [name, dispose] of [
-      ["archived", archiveThread],
-      ["deleted", deleteThread],
+      [
+        "archived",
+        (database: Parameters<typeof archiveThread>[0], id: string) =>
+          archiveThread(
+            database,
+            noopNotifier,
+            id,
+            ownerManualThreadLifecycleActor,
+          ),
+      ],
+      [
+        "deleted",
+        (database: Parameters<typeof deleteThread>[0], id: string) =>
+          deleteThread(database, noopNotifier, id),
+      ],
     ] as const) {
       const thread = createThread(db, noopNotifier, {
         projectId: project.id,
@@ -294,7 +307,7 @@ describe("listDueScheduledQueuedThreadMessages", () => {
         listDueScheduledQueuedThreadMessages(db, 5_000).map((r) => r.id),
       ).toEqual([row.id]);
 
-      dispose(db, noopNotifier, thread.id);
+      dispose(db, thread.id);
       expect(listDueScheduledQueuedThreadMessages(db, 5_000)).toEqual([]);
     }
   });
