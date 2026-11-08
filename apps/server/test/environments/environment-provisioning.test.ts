@@ -5,7 +5,10 @@ import {
   listEvents,
   threads,
 } from "@bb/db";
-import { systemThreadProvisioningEventDataSchema } from "@bb/domain";
+import {
+  ownerManualThreadLifecycleActor,
+  systemThreadProvisioningEventDataSchema,
+} from "@bb/domain";
 import { describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../src/errors.js";
 import {
@@ -370,7 +373,10 @@ describe("environment reprovisioning", () => {
       }
       const environmentId = provisionCommand.command.environmentId;
 
-      beginProjectDeletion(harness.deps, { projectId: project.id });
+      beginProjectDeletion(harness.deps, {
+        actor: ownerManualThreadLifecycleActor,
+        projectId: project.id,
+      });
       expect(getThread(harness.db, thread.id)).toMatchObject({
         deletedAt: expect.any(Number),
       });

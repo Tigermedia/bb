@@ -1,3 +1,4 @@
+import { configureThreadApprovalAuthority } from "@bb/db";
 import { registerDesktopBrowserRoutes } from "./routes/desktop-browsers.js";
 import { createNodeWebSocket } from "@hono/node-ws";
 import { createHash } from "node:crypto";
@@ -410,6 +411,8 @@ export function createApp(
   deps: ServerAppDeps,
   options?: CreateAppOptions,
 ): ServerApp {
+  if (deps.ownerApprovalPublicKey)
+    configureThreadApprovalAuthority(deps.db, deps.ownerApprovalPublicKey);
   const app = new Hono();
   const { injectWebSocket, upgradeWebSocket, wss } = createNodeWebSocket({
     app,

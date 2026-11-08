@@ -54,6 +54,7 @@ export function threadListEntry(
     sourceThreadId: null,
     originKind: null,
     originPluginId: null,
+    creationProvenance: null,
     visibility: "visible",
     archivedAt: null,
     pinnedAt: null,

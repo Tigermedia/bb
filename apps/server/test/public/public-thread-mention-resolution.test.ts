@@ -1,5 +1,5 @@
 import { archiveThread, markThreadDeleted } from "@bb/db";
-import { GENERATED_ID_ALPHABET, GENERATED_ID_SUFFIX_LENGTH } from "@bb/domain";
+import { GENERATED_ID_ALPHABET, GENERATED_ID_SUFFIX_LENGTH, ownerManualThreadLifecycleActor } from "@bb/domain";
 import {
   resolveThreadMentionsResponseSchema,
   THREAD_MENTION_RESOLVE_MAX_IDS,
@@ -50,12 +50,12 @@ describe("public thread mention resolution route", () => {
         projectId: project.id,
         title: "Archived mention target",
       });
-      archiveThread(harness.deps.db, harness.deps.hub, archived.id);
+      archiveThread(harness.deps.db, harness.deps.hub, archived.id, ownerManualThreadLifecycleActor);
       const deleted = seedThread(harness.deps, {
         projectId: project.id,
         title: "Deleted mention target",
       });
-      markThreadDeleted(harness.deps.db, harness.deps.hub, {
+      markThreadDeleted(harness.deps.db, harness.deps.hub, { actor: ownerManualThreadLifecycleActor, 
         threadId: deleted.id,
       });
 

@@ -1,3 +1,4 @@
+import { ownerManualThreadLifecycleActor } from "@bb/domain";
 import { eq } from "drizzle-orm";
 import {
   archiveThread,
@@ -586,7 +587,7 @@ describe("managed environment cleanup recovery sweep", () => {
         providerId: "codex",
         status: "idle",
       });
-      archiveThread(harness.db, harness.hub, thread.id);
+      archiveThread(harness.db, harness.hub, thread.id, ownerManualThreadLifecycleActor);
 
       await runManagedEnvironmentArchiveCleanupRecoverySweep(
         harness.deps,
@@ -650,7 +651,7 @@ describe("managed environment cleanup recovery sweep", () => {
         providerId: "codex",
         status: "idle",
       });
-      markThreadDeleted(harness.db, harness.hub, { threadId: thread.id });
+      markThreadDeleted(harness.db, harness.hub, { actor: ownerManualThreadLifecycleActor,  threadId: thread.id });
 
       await runEnvironmentCleanupAdvance(harness.deps, {
         environmentId: environment.id,

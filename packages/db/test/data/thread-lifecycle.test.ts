@@ -1,3 +1,4 @@
+import { ownerManualThreadLifecycleActor } from "@bb/domain";
 import { describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import type { DbTransaction } from "../../src/connection.js";
@@ -105,7 +106,7 @@ describe("applyThreadLifecycleEvent", () => {
       providerId: "codex",
       status: "starting",
     });
-    markThreadDeleted(db, noopNotifier, { threadId: thread.id });
+    markThreadDeleted(db, noopNotifier, { actor: ownerManualThreadLifecycleActor,  threadId: thread.id });
     const beforeRow = getThread(db, thread.id);
 
     const outcome = applyThreadLifecycleEvent(db, {

@@ -14,6 +14,7 @@ import {
 } from "./shared-types.js";
 import { threadStatusSchema, threadStatusValues } from "./thread-status.js";
 import { threadOriginKindSchema } from "./thread-origin-kind.js";
+import { threadCreationProvenanceSchema } from "./thread-origin-lifecycle.js";
 import { threadVisibilitySchema } from "./thread-visibility.js";
 export { threadStatusSchema, threadStatusValues } from "./thread-status.js";
 export type { ThreadStatus } from "./thread-status.js";
@@ -401,6 +402,14 @@ export const threadSchema = z.object({
   sourceThreadId: z.string().nullable(),
   originKind: threadOriginKindSchema.nullable(),
   originPluginId: z.string().nullable(),
+  creationProvenance: threadCreationProvenanceSchema.nullable(),
+  pinSource: z
+    .enum(["creation-default", "human", "bot-policy"])
+    .nullable()
+    .optional(),
+  humanPinProtected: z.boolean().optional(),
+  manualUnpin: z.boolean().optional(),
+  mutationRevision: z.number().int().nonnegative().optional(),
   visibility: threadVisibilitySchema,
   archivedAt: z.number().nullable(),
   pinnedAt: z.number().nullable(),

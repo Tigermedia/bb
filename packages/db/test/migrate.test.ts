@@ -298,7 +298,32 @@ function dropThreadConversationOutlinesTable(db: DbConnection): void {
   db.$client.prepare("DROP TABLE IF EXISTS thread_conversation_outlines").run();
 }
 
+function dropThreadOriginLifecycleSchema(db: DbConnection): void {
+  db.$client.prepare("DROP TABLE IF EXISTS thread_lifecycle_approvals").run();
+  for (const column of [
+    "pin_source",
+    "human_pin_protected",
+    "manual_unpin",
+    "mutation_revision",
+  ]) {
+    const present = db.$client
+      .prepare<[], TableInfoRow>("PRAGMA table_info(threads)")
+      .all()
+      .some((row) => row.name === column);
+    if (present) db.$client.exec(`ALTER TABLE threads DROP COLUMN ${column}`);
+  }
+  const columns = db.$client
+    .prepare<[], TableInfoRow>("PRAGMA table_info(threads)")
+    .all();
+  if (columns.some((column) => column.name === "creation_provenance")) {
+    db.$client
+      .prepare("ALTER TABLE threads DROP COLUMN creation_provenance")
+      .run();
+  }
+}
+
 function dropRewindAddedTables(db: DbConnection): void {
+  dropThreadOriginLifecycleSchema(db);
   dropThreadConversationOutlinesTable(db);
   db.$client.prepare("DROP TABLE IF EXISTS thread_tabs").run();
   db.$client.prepare("DROP TABLE IF EXISTS automation_runs").run();
@@ -2154,6 +2179,7 @@ describe("migrate", () => {
       dropMarketplaceCatalogSchema(db);
       dropEventParentToolCallIdColumn(db);
       dropQueueReworkSchema(db);
+      dropThreadOriginLifecycleSchema(db);
 
       restoreLegacyThreadOriginColumn(db);
       migrate(db);
@@ -2559,6 +2585,7 @@ describe("migrate", () => {
       dropMarketplaceCatalogSchema(db);
       dropEventParentToolCallIdColumn(db);
       dropQueueReworkSchema(db);
+      dropThreadOriginLifecycleSchema(db);
 
       restoreLegacyThreadOriginColumn(db);
       expect(
@@ -2661,6 +2688,7 @@ describe("migrate", () => {
       dropMarketplaceCatalogSchema(db);
       dropEventParentToolCallIdColumn(db);
       dropQueueReworkSchema(db);
+      dropThreadOriginLifecycleSchema(db);
 
       restoreLegacyThreadOriginColumn(db);
       expect(() => migrate(db)).not.toThrow();
@@ -5230,6 +5258,7 @@ describe("migrate", () => {
       dropEventParentToolCallIdColumn(db);
       dropMarketplaceStatsColumn(db);
       dropQueueReworkSchema(db);
+      dropThreadOriginLifecycleSchema(db);
       db.$client
         .prepare<DeleteMigrationParameters>(
           "DELETE FROM __drizzle_migrations WHERE created_at >= ?",

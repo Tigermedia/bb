@@ -1,5 +1,4 @@
-import {
-  archiveThread,
+import { archiveThread,
   getEnvironment,
   getThread,
   listIdleThreadsWithQueuedMessages,
@@ -12,8 +11,7 @@ import {
 import {
   encodeClientTurnRequestIdNumber,
   threadScope,
-  type EnvironmentStatus,
-} from "@bb/domain";
+  type EnvironmentStatus, ownerManualThreadLifecycleActor } from "@bb/domain";
 import { describe, expect, it } from "vitest";
 import { readJson } from "../helpers/json.js";
 import {
@@ -230,7 +228,7 @@ describe("queued message into a thread whose environment is gone (#1789)", () =>
         );
       expect(sweepCandidates()).toEqual([thread.id]);
 
-      archiveThread(harness.db, harness.hub, thread.id);
+      archiveThread(harness.db, harness.hub, thread.id, ownerManualThreadLifecycleActor);
       requireEnvironmentLifecycleEventApplied(
         applyEnvironmentLifecycleEvent(harness.db, harness.hub, {
           environmentId: environment.id,

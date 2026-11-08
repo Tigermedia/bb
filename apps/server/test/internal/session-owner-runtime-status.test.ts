@@ -1,4 +1,4 @@
-import { changedMessageSchema, type ThreadChangedMessage } from "@bb/domain";
+import { changedMessageSchema, type ThreadChangedMessage, ownerManualThreadLifecycleActor } from "@bb/domain";
 import { getThread, markThreadDeleted } from "@bb/db";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -169,7 +169,7 @@ describe("host thread runtime status notifications", () => {
         environmentId: large.environmentId,
         status: "active",
       });
-      markThreadDeleted(harness.db, harness.hub, {
+      markThreadDeleted(harness.db, harness.hub, { actor: ownerManualThreadLifecycleActor, 
         threadId: deletedActiveThread.id,
       });
       const socket = createMockHubSocket();

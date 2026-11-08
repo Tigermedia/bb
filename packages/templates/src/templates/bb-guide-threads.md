@@ -348,6 +348,17 @@ Lifecycle:
 
   bb thread archive [id]                   Archive a thread (and children/hidden forks)
     --self                                 Archive current thread
+    --approval <id>                        Single-use approval for this thread's archive
+
+  Threads opened in the app are pinned once, when they are created, and are
+  not archived by automation. `bb thread spawn` and `bb thread fork` record
+  CLI provenance: those threads are not pinned by bb and automation may
+  archive them. A thread with no recorded provenance is protected the same
+  way as an app-opened thread. Unpin, rename, age, and completion leave that
+  protection in place. `--approval` authorizes only the named thread and only
+  the archive action; it is not a bulk grant. `bb environment archive-threads`
+  does not accept an approval and, when run from the CLI, archives only
+  threads recorded as opened by the CLI or a plugin.
 
   `thread stop` preserves the thread history, metadata, environment, and future
   resume behavior. It stops active work and releases an idle agent runtime.
@@ -361,6 +372,10 @@ Lifecycle:
 
   bb thread delete <id>                    Delete permanently
     --yes                                  Skip confirmation
+    --approval <id>                        Single-use approval for this thread's delete
+
+  Delete follows the same provenance rule as archive. `--approval` authorizes
+  only this thread and only the delete action.
 
 Read-only commands require a thread ID or --self where supported.
 Mutating thread lifecycle and messaging commands require an explicit ID or --self.

@@ -32,6 +32,10 @@ import { callHostRetryableOnlineRpc } from "../services/hosts/online-rpc.js";
 import { generateCommitMessage } from "../services/ai/commit-message.js";
 import { archiveEnvironmentThreads } from "../services/threads/thread-archive.js";
 import {
+  actorForRelatedThreads,
+  resolveThreadLifecycleActor,
+} from "../services/threads/thread-lifecycle-actor.js";
+import {
   normalizeBranchQuery,
   parseBranchListLimit,
 } from "./branch-list-query.js";
@@ -267,7 +271,12 @@ export function registerEnvironmentRoutes(app: Hono, deps: AppDeps): void {
       );
     }
 
-    const archivedThreadIds = archiveEnvironmentThreads(deps, { environment });
+    const archivedThreadIds = archiveEnvironmentThreads(deps, {
+      actor: actorForRelatedThreads(
+        resolveThreadLifecycleActor(context, deps.ownerLifecycleSecret),
+      ),
+      environment,
+    });
     return context.json({
       ok: true,
       archivedThreadIds,

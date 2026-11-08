@@ -48,6 +48,7 @@ interface ThreadUpdateCommandOptions {
 interface ThreadArchiveCommandOptions {
   self?: boolean;
   json?: boolean;
+  approval?: string;
 }
 
 interface ThreadUnarchiveCommandOptions {
@@ -64,6 +65,7 @@ interface ThreadDeleteCommandOptions {
   confirmChildThreads?: boolean;
   yes?: boolean;
   json?: boolean;
+  approval?: string;
 }
 
 interface ThreadTellCommandOptions {
@@ -256,6 +258,10 @@ export function registerActionsCommands(
     .command("archive [id]")
     .description("Archive a thread")
     .option("--self", "Target the current thread (from BB_THREAD_ID)")
+    .option(
+      "--approval <id>",
+      "Single-use approval for this thread's archive action",
+    )
     .option("--json", "Print machine-readable JSON output")
     .action(
       action(
@@ -264,7 +270,10 @@ export function registerActionsCommands(
           const sdk = createCliBbSdk(getUrl());
           let archivedThreadIds: string[] = [threadId];
           try {
-            const result = await sdk.threads.archive({ threadId });
+            const result = await sdk.threads.archive({
+              threadId,
+              ...(opts.approval ? { approvalId: opts.approval } : {}),
+            });
             archivedThreadIds = result.archivedThreadIds;
           } catch (err: unknown) {
             throw prependErrorContext(
@@ -350,6 +359,10 @@ export function registerActionsCommands(
       "--confirm-child-threads",
       "Confirm deleting a thread with child threads",
     )
+    .option(
+      "--approval <id>",
+      "Single-use approval for this thread's delete action",
+    )
     .option("--json", "Print machine-readable JSON output")
     .action(
       action(async (id: string, opts: ThreadDeleteCommandOptions) => {
@@ -370,6 +383,7 @@ export function registerActionsCommands(
           await sdk.threads.delete({
             threadId: id,
             childThreadsConfirmed: opts.confirmChildThreads === true,
+            ...(opts.approval ? { approvalId: opts.approval } : {}),
           });
         } catch (err: unknown) {
           throw prependErrorContext(`Failed to delete thread ${id}`, err);

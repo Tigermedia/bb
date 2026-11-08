@@ -528,9 +528,15 @@ function attachThreadToEnvironment(
   args: AttachThreadToEnvironmentArgs,
 ): ThreadProvisionProvisionableContext {
   if (args.thread.environmentId !== args.environment.id) {
-    updateThread(deps.db, deps.hub, args.thread.id, {
-      environmentId: args.environment.id,
-    });
+    updateThread(
+      deps.db,
+      deps.hub,
+      args.thread.id,
+      {
+        environmentId: args.environment.id,
+      },
+      { kind: "runtime" },
+    );
   }
   if (
     isProvisionableContext(args.context) &&
@@ -611,9 +617,15 @@ function createProvisioningEnvironment(
         args.environmentInput,
       );
       if (args.thread.environmentId !== environment.id) {
-        updateThread(tx, deps.hub, args.thread.id, {
-          environmentId: environment.id,
-        });
+        updateThread(
+          tx,
+          deps.hub,
+          args.thread.id,
+          {
+            environmentId: environment.id,
+          },
+          { kind: "runtime" },
+        );
       }
 
       const attachedContext = createEnvironmentAttachedContext(args.context, {
@@ -674,9 +686,15 @@ function createPreparedProvisioningEnvironment(
         status: "ready",
       });
       if (args.thread.environmentId !== environment.id) {
-        updateThread(tx, deps.hub, args.thread.id, {
-          environmentId: environment.id,
-        });
+        updateThread(
+          tx,
+          deps.hub,
+          args.thread.id,
+          {
+            environmentId: environment.id,
+          },
+          { kind: "runtime" },
+        );
       }
 
       const appendedSequence = appendThreadProvisioningEventInTransaction(tx, {

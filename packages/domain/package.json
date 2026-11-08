@@ -19,6 +19,11 @@
       "types": "./src/thread-origin-kind.ts",
       "default": "./src/thread-origin-kind.ts"
     },
+    "./thread-origin-lifecycle": {
+      "source": "./src/thread-origin-lifecycle.ts",
+      "types": "./src/thread-origin-lifecycle.ts",
+      "default": "./src/thread-origin-lifecycle.ts"
+    },
     "./thread-visibility": {
       "source": "./src/thread-visibility.ts",
       "types": "./src/thread-visibility.ts",

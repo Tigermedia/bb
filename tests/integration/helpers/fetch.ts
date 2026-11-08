@@ -46,9 +46,18 @@ function waitForRetryDelay(): Promise<void> {
   );
 }
 
-export function createIntegrationFetch(): typeof fetch {
+export function createIntegrationFetch(args?: {
+  cookie?: string;
+}): typeof fetch {
   return async (input, init) => {
-    const retryable = isRetryableFetch(input, init);
+    const headers = new Headers(
+      init?.headers ?? (input instanceof Request ? input.headers : undefined),
+    );
+    if (args?.cookie && !headers.has("cookie")) {
+      headers.set("cookie", args.cookie);
+    }
+    const requestInit = { ...init, headers };
+    const retryable = isRetryableFetch(input, requestInit);
 
     for (
       let attempt = 1;
@@ -56,7 +65,7 @@ export function createIntegrationFetch(): typeof fetch {
       attempt += 1
     ) {
       try {
-        return await fetch(input, init);
+        return await fetch(input, requestInit);
       } catch (error) {
         const shouldRetry =
           retryable &&

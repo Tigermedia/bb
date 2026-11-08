@@ -1,3 +1,4 @@
+import { ownerManualThreadLifecycleActor } from "@bb/domain";
 import { describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import type { DbConnection } from "../../src/connection.js";
@@ -612,7 +613,7 @@ describe("sweepManagedEnvironments", () => {
 
     expect(sweepManagedEnvironments(db)).toHaveLength(0);
 
-    archiveThread(db, noopNotifier, thread.id);
+    archiveThread(db, noopNotifier, thread.id, ownerManualThreadLifecycleActor);
 
     const candidates = sweepManagedEnvironments(db);
     expect(candidates).toHaveLength(1);
@@ -638,7 +639,7 @@ describe("sweepManagedEnvironments", () => {
       status: "idle",
     });
 
-    markThreadDeleted(db, noopNotifier, { threadId: thread.id });
+    markThreadDeleted(db, noopNotifier, { actor: ownerManualThreadLifecycleActor,  threadId: thread.id });
 
     const candidates = sweepManagedEnvironments(db);
     expect(candidates).toHaveLength(1);

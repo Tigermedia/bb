@@ -3,7 +3,10 @@ import {
   applyEnvironmentLifecycleEvent,
   requireEnvironmentLifecycleEventApplied,
 } from "@bb/db/internal-environment-lifecycle";
-import type { EnvironmentStatus } from "@bb/domain";
+import {
+  ownerManualThreadLifecycleActor,
+  type EnvironmentStatus,
+} from "@bb/domain";
 import { describe, expect, it } from "vitest";
 import { listQueuedThreadCommands } from "../helpers/commands.js";
 import { readJson } from "../helpers/json.js";
@@ -44,7 +47,7 @@ describe("thread environment decoupling (B*)", () => {
         providerThreadId,
         threadId: thread.id,
       });
-      archiveThread(harness.db, harness.hub, thread.id);
+      archiveThread(harness.db, harness.hub, thread.id, ownerManualThreadLifecycleActor);
 
       const response = await harness.app.request(
         `/api/v1/threads/${thread.id}/unarchive`,
@@ -91,7 +94,7 @@ describe("thread environment decoupling (B*)", () => {
         environmentId: environment.id,
         status: "idle",
       });
-      archiveThread(harness.db, harness.hub, thread.id);
+      archiveThread(harness.db, harness.hub, thread.id, ownerManualThreadLifecycleActor);
       requireEnvironmentLifecycleEventApplied(
         applyEnvironmentLifecycleEvent(harness.db, harness.hub, {
           environmentId: environment.id,

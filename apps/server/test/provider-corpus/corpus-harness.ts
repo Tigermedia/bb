@@ -105,6 +105,7 @@ export function loadCorpusThreadIntoDb(
           sourceThreadId: null,
           originKind: row.originKind,
           originPluginId: null,
+          creationProvenance: null,
           visibility: row.visibility,
           archivedAt: row.archivedAt,
           pinnedAt: null,

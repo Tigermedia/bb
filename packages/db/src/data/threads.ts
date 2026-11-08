@@ -20,6 +20,8 @@ import type {
   ThreadChangeKind,
   ThreadLifecycleEvent,
   ThreadLifecycleNoopReason,
+  ThreadCreationProvenance,
+  ThreadLifecycleActor,
   ThreadOriginKind,
   ThreadSearchSourceKind,
   ThreadStatus,
@@ -42,9 +44,8 @@ import {
   threads,
 } from "../schema.js";
 import { createThreadId } from "../ids.js";
-import {
-  createOrderKeyBetween,
-} from "./order-keys.js";
+import { authorizeThreadLifecycleMutation } from "./thread-lifecycle-guard.js";
+import { createOrderKeyBetween } from "./order-keys.js";
 
 type ThreadWriteConnection = DbConnection | DbTransaction;
 
@@ -72,7 +73,9 @@ function countThreadsWhere(
   db: ThreadWriteConnection,
   where: ThreadWhere,
 ): number {
-  return db.select({ count: count() }).from(threads).where(where).get()?.count ?? 0;
+  return (
+    db.select({ count: count() }).from(threads).where(where).get()?.count ?? 0
+  );
 }
 
 function listThreadsWhere(
@@ -82,8 +85,13 @@ function listThreadsWhere(
   return db.select().from(threads).where(where).all();
 }
 
-function hasThreadWhere(db: ThreadWriteConnection, where: ThreadWhere): boolean {
-  return db.select({ id: threads.id }).from(threads).where(where).get() !== undefined;
+function hasThreadWhere(
+  db: ThreadWriteConnection,
+  where: ThreadWhere,
+): boolean {
+  return (
+    db.select({ id: threads.id }).from(threads).where(where).get() !== undefined
+  );
 }
 
 export interface ThreadSearchHighlightRange {
@@ -270,6 +278,7 @@ export interface CreateThreadInput {
   sourceThreadId?: string | null;
   originKind?: ThreadOriginKind | null;
   originPluginId?: string | null;
+  creationProvenance?: ThreadCreationProvenance | null;
   visibility?: ThreadVisibility;
 }
 
@@ -282,8 +291,12 @@ export function createThread(
   const now = Date.now();
   const id = createThreadId();
   const originKind = input.originKind ?? null;
+  const creationProvenance = input.creationProvenance ?? null;
   const thread = db.transaction(
     (tx) => {
+      const pinOnCreate =
+        creationProvenance === "manual" && visibility === "visible";
+      const firstPinnedThread = pinOnCreate ? getFirstPinnedThread(tx) : null;
       const createdThread = tx
         .insert(threads)
         .values({
@@ -296,13 +309,27 @@ export function createThread(
           sectionId: input.sectionId ?? null,
           status: input.status ?? "starting",
           parentThreadId:
-            originKind === null ? input.parentThreadId ?? null : null,
+            originKind === null ? (input.parentThreadId ?? null) : null,
           sourceThreadId:
             input.sourceThreadId ??
-            (originKind === null ? null : input.parentThreadId ?? null),
+            (originKind === null ? null : (input.parentThreadId ?? null)),
           originKind,
           originPluginId: input.originPluginId ?? null,
+          creationProvenance,
+          pinSource:
+            creationProvenance === "manual"
+              ? "creation-default"
+              : creationProvenance === "bot"
+                ? "bot-policy"
+                : null,
           visibility,
+          pinnedAt: pinOnCreate ? now : null,
+          pinSortKey: pinOnCreate
+            ? createOrderKeyBetween({
+                previousKey: null,
+                nextKey: firstPinnedThread?.pinSortKey ?? null,
+              })
+            : null,
           lastReadAt: now,
           latestAttentionAt: now,
           createdAt: now,
@@ -387,15 +414,18 @@ export interface ListThreadsForProjectsOptions {
 }
 
 export interface PinThreadArgs {
+  actor?: ThreadLifecycleActor;
   pinnedAt?: number;
   threadId: string;
 }
 
 export interface UnpinThreadArgs {
+  actor?: ThreadLifecycleActor;
   threadId: string;
 }
 
 export interface ReorderPinnedThreadArgs {
+  actor?: ThreadLifecycleActor;
   db: DbConnection;
   nextThreadId: string | null;
   notifier: DbNotifier;
@@ -414,10 +444,7 @@ interface PinThreadMutationResult {
   thread: ThreadRow;
 }
 
-type PinnedThreadRootCandidate = Pick<
-  ThreadRow,
-  "id" | "parentThreadId"
->;
+type PinnedThreadRootCandidate = Pick<ThreadRow, "id" | "parentThreadId">;
 
 interface FilterVisiblePinnedThreadRootsArgs<
   TThread extends PinnedThreadRootCandidate,
@@ -481,9 +508,7 @@ function getFirstPinnedThread(db: DbQueryConnection): ThreadRow | null {
 
 function filterVisiblePinnedThreadRoots<
   TThread extends PinnedThreadRootCandidate,
->({
-  pinnedThreads,
-}: FilterVisiblePinnedThreadRootsArgs<TThread>): TThread[] {
+>({ pinnedThreads }: FilterVisiblePinnedThreadRootsArgs<TThread>): TThread[] {
   const pinnedThreadIds = new Set(pinnedThreads.map((thread) => thread.id));
   return pinnedThreads.filter(
     (thread) =>
@@ -590,12 +615,12 @@ export interface ListUnarchivedAssignedChildThreadsArgs {
   parentThreadId: string;
 }
 
-
 export interface ListNonDeletedChildThreadsArgs {
   parentThreadId: string;
 }
 
 export interface MarkThreadDeletedArgs {
+  actor: ThreadLifecycleActor;
   deletedAt?: number;
   threadId: string;
 }
@@ -647,9 +672,7 @@ function statusTransitionNeedsAttention(args: StatusTransition): boolean {
     return false;
   }
 
-  return (
-    args.currentStatus === "active" || args.currentStatus === "starting"
-  );
+  return args.currentStatus === "active" || args.currentStatus === "starting";
 }
 
 function buildListThreadsFilters(options: ListThreadsOptions) {
@@ -665,9 +688,7 @@ function buildListThreadsFilters(options: ListThreadsOptions) {
     options.sourceThreadId
       ? eq(threads.sourceThreadId, options.sourceThreadId)
       : undefined,
-    options.originKind
-      ? eq(threads.originKind, options.originKind)
-      : undefined,
+    options.originKind ? eq(threads.originKind, options.originKind) : undefined,
     options.originPluginId
       ? eq(threads.originPluginId, options.originPluginId)
       : undefined,
@@ -711,7 +732,9 @@ function buildActiveProjectThreadOrderBy() {
 function buildPinnedThreadOrderBy() {
   return [
     asc(sql`CASE WHEN ${threads.pinnedAt} IS NOT NULL THEN 0 ELSE 1 END`),
-    asc(sql`CASE WHEN ${threads.pinnedAt} IS NOT NULL THEN ${threads.pinSortKey} END`),
+    asc(
+      sql`CASE WHEN ${threads.pinnedAt} IS NOT NULL THEN ${threads.pinSortKey} END`,
+    ),
     asc(sql`CASE WHEN ${threads.pinnedAt} IS NOT NULL THEN ${threads.id} END`),
   ];
 }
@@ -826,7 +849,9 @@ function findHighlightRanges(args: {
   }
 
   return mergeHighlightRanges(
-    ranges.sort((left, right) => left.start - right.start || left.end - right.end),
+    ranges.sort(
+      (left, right) => left.start - right.start || left.end - right.end,
+    ),
   );
 }
 
@@ -846,7 +871,7 @@ function normalizeThreadSearchHighlightText(text: string): {
   const originalStarts: number[] = [];
   const originalEnds: number[] = [];
 
-  for (let index = 0; index < text.length; ) {
+  for (let index = 0; index < text.length;) {
     const codePoint = text.codePointAt(index);
     if (codePoint === undefined) {
       break;
@@ -1103,7 +1128,8 @@ export function searchThreadsWithPendingInteractionState(
 ): ThreadSearchResults {
   const tokens = listThreadSearchQueryTokens(args.query);
   const tokenMatchQueries = listThreadSearchTokenMatchQueries(tokens);
-  const anyTokenMatchQuery = buildThreadSearchAnyTokenMatchQuery(tokenMatchQueries);
+  const anyTokenMatchQuery =
+    buildThreadSearchAnyTokenMatchQuery(tokenMatchQueries);
   if (anyTokenMatchQuery === null) {
     return {
       active: { total: 0, results: [] },
@@ -1187,7 +1213,9 @@ export function countThreads(
     options.includeHidden === true
       ? undefined
       : eq(threads.visibility, "visible"),
-    options.status !== undefined ? eq(threads.status, options.status) : undefined,
+    options.status !== undefined
+      ? eq(threads.status, options.status)
+      : undefined,
     options.providerId !== undefined
       ? eq(threads.providerId, options.providerId)
       : undefined,
@@ -1287,9 +1315,7 @@ export interface RunningThreadRow {
  * `archived_at IS NULL` is the leading equality and the status set is the
  * range that follows.
  */
-export function listRunningThreads(
-  db: DbQueryConnection,
-): RunningThreadRow[] {
+export function listRunningThreads(db: DbQueryConnection): RunningThreadRow[] {
   return db
     .select({
       id: threads.id,
@@ -1445,7 +1471,6 @@ export function listUnarchivedAssignedChildThreads(
   );
 }
 
-
 export function listUnarchivedHiddenSourceThreads(
   db: ThreadWriteConnection,
   args: ListUnarchivedHiddenSourceThreadsArgs,
@@ -1510,9 +1535,7 @@ export function hasLiveThreadAtHostPath(
       and(
         eq(environments.hostId, args.hostId),
         eq(environments.path, args.path),
-        liveThreads(
-          inArray(threads.status, [...NON_TERMINAL_THREAD_STATUSES]),
-        ),
+        liveThreads(inArray(threads.status, [...NON_TERMINAL_THREAD_STATUSES])),
       ),
     )
     .get();
@@ -1581,7 +1604,21 @@ export function pinThread(
       if (!existing || existing.deletedAt !== null) {
         return null;
       }
-      if (existing.pinnedAt !== null && existing.pinSortKey !== null) {
+      authorizeThreadLifecycleMutation(tx, {
+        action: "pin",
+        payload:
+          args.pinnedAt === undefined ? null : { pinnedAt: args.pinnedAt },
+        actor: args.actor ?? { kind: "automation", approvalId: null },
+        now: Date.now(),
+        thread: existing,
+      });
+      if (
+        existing.pinnedAt !== null &&
+        existing.pinSortKey !== null &&
+        (existing.humanPinProtected ||
+          (args.actor?.kind !== "owner-manual" &&
+            !(args.actor?.kind === "automation" && args.actor.approvalId)))
+      ) {
         return { changed: false, thread: existing };
       }
 
@@ -1594,8 +1631,17 @@ export function pinThread(
       const updated = tx
         .update(threads)
         .set({
-          pinnedAt: args.pinnedAt ?? now,
-          pinSortKey,
+          humanPinProtected:
+            existing.humanPinProtected ||
+            args.actor?.kind === "owner-manual" ||
+            Boolean(args.actor?.kind === "automation" && args.actor.approvalId),
+          pinSource:
+            args.actor?.kind === "owner-manual" ||
+            (args.actor?.kind === "automation" && args.actor.approvalId)
+              ? "human"
+              : "bot-policy",
+          pinnedAt: existing.pinnedAt ?? args.pinnedAt ?? now,
+          pinSortKey: existing.pinSortKey ?? pinSortKey,
           updatedAt: now,
         })
         .where(nonDeletedThreads(eq(threads.id, args.threadId)))
@@ -1627,13 +1673,29 @@ export function unpinThread(
       if (!existing || existing.deletedAt !== null) {
         return null;
       }
-      if (existing.pinnedAt === null && existing.pinSortKey === null) {
+      authorizeThreadLifecycleMutation(tx, {
+        action: "unpin",
+        actor: args.actor ?? { kind: "automation", approvalId: null },
+        now: Date.now(),
+        thread: existing,
+      });
+      if (
+        existing.pinnedAt === null &&
+        existing.pinSortKey === null &&
+        (existing.manualUnpin ||
+          (args.actor?.kind !== "owner-manual" &&
+            !(args.actor?.kind === "automation" && args.actor.approvalId)))
+      ) {
         return { changed: false, thread: existing };
       }
 
       const updated = tx
         .update(threads)
         .set({
+          manualUnpin:
+            existing.manualUnpin ||
+            args.actor?.kind === "owner-manual" ||
+            Boolean(args.actor?.kind === "automation" && args.actor.approvalId),
           pinnedAt: null,
           pinSortKey: null,
           updatedAt: Date.now(),
@@ -1655,6 +1717,7 @@ export function unpinThread(
 }
 
 export function reorderPinnedThread({
+  actor,
   db,
   nextThreadId,
   notifier,
@@ -1668,6 +1731,14 @@ export function reorderPinnedThread({
       if (!movedThread || movedThread.deletedAt !== null) {
         return { kind: "not_found" };
       }
+      authorizeThreadLifecycleMutation(tx, {
+        action: "reorder",
+        actor: actor ?? { kind: "automation", approvalId: null },
+        now: Date.now(),
+        thread: movedThread,
+        payload: { nextThreadId, previousThreadId },
+        validateOnly: true,
+      });
       if (movedThread.pinnedAt === null || movedThread.pinSortKey === null) {
         return { kind: "not_pinned" };
       }
@@ -1713,12 +1784,26 @@ export function reorderPinnedThread({
         currentPreviousThreadId === previousThreadId &&
         currentNextThreadId === nextThreadId
       ) {
+        authorizeThreadLifecycleMutation(tx, {
+          action: "reorder",
+          actor: actor ?? { kind: "automation", approvalId: null },
+          now: Date.now(),
+          thread: movedThread,
+          payload: { nextThreadId, previousThreadId },
+        });
         return {
           kind: "unchanged",
           threads: currentThreads,
         };
       }
 
+      authorizeThreadLifecycleMutation(tx, {
+        action: "reorder",
+        actor: actor ?? { kind: "automation", approvalId: null },
+        now: Date.now(),
+        thread: movedThread,
+        payload: { nextThreadId, previousThreadId },
+      });
       const pinSortKey = createOrderKeyBetween({
         previousKey: previousThread?.pinSortKey ?? null,
         nextKey: nextThread?.pinSortKey ?? null,
@@ -1768,66 +1853,92 @@ export function updateThread(
   notifier: DbNotifier,
   id: string,
   input: UpdateThreadInput,
+  actor: ThreadLifecycleActor = { kind: "automation", approvalId: null },
 ) {
-  const now = Date.now();
-  const existing = db.select().from(threads).where(eq(threads.id, id)).get();
-  if (!existing) {
-    return null;
-  }
-  const changes: ThreadChangeKind[] = [];
-  if ("title" in input || "sectionId" in input) changes.push("title-changed");
-  if ("lastReadAt" in input) changes.push("read-state-changed");
-  if (
-    "visibility" in input &&
-    input.visibility !== existing.visibility
-  ) {
-    changes.push("title-changed");
-  }
-  if (
-    "parentThreadId" in input &&
-    input.parentThreadId !== existing.parentThreadId
-  ) {
-    changes.push("parent-changed");
-  }
-  if (
-    "environmentId" in input &&
-    input.environmentId !== existing.environmentId
-  ) {
-    changes.push("environment-changed");
-  }
+  return db.transaction(
+    (db) => {
+      const now = Date.now();
+      const existing = db
+        .select()
+        .from(threads)
+        .where(eq(threads.id, id))
+        .get();
+      if (!existing) {
+        return null;
+      }
+      authorizeThreadLifecycleMutation(db, {
+        action:
+          actor.kind === "runtime" &&
+          Object.keys(input).length === 1 &&
+          "lastReadAt" in input
+            ? "read-state"
+            : actor.kind === "runtime" &&
+                Object.keys(input).length === 1 &&
+                "environmentId" in input
+              ? "runtime-attach"
+              : Object.keys(input).length === 1 && "title" in input
+                ? "rename"
+                : "metadata",
+        actor,
+        now,
+        thread: existing,
+        payload: input,
+      });
+      const changes: ThreadChangeKind[] = [];
+      if ("title" in input || "sectionId" in input)
+        changes.push("title-changed");
+      if ("lastReadAt" in input) changes.push("read-state-changed");
+      if ("visibility" in input && input.visibility !== existing.visibility) {
+        changes.push("title-changed");
+      }
+      if (
+        "parentThreadId" in input &&
+        input.parentThreadId !== existing.parentThreadId
+      ) {
+        changes.push("parent-changed");
+      }
+      if (
+        "environmentId" in input &&
+        input.environmentId !== existing.environmentId
+      ) {
+        changes.push("environment-changed");
+      }
 
-  const set: Partial<typeof threads.$inferInsert> = { updatedAt: now };
-  if ("title" in input) set.title = input.title;
-  if ("sectionId" in input) {
-    set.sectionId = input.sectionId;
-  }
-  if ("environmentId" in input) set.environmentId = input.environmentId;
-  if ("lastReadAt" in input) {
-    set.lastReadAt = input.lastReadAt;
-  }
-  if ("parentThreadId" in input) set.parentThreadId = input.parentThreadId;
-  if ("visibility" in input) set.visibility = input.visibility;
+      const set: Partial<typeof threads.$inferInsert> = { updatedAt: now };
+      if ("title" in input) set.title = input.title;
+      if ("sectionId" in input) {
+        set.sectionId = input.sectionId;
+      }
+      if ("environmentId" in input) set.environmentId = input.environmentId;
+      if ("lastReadAt" in input) {
+        set.lastReadAt = input.lastReadAt;
+      }
+      if ("parentThreadId" in input) set.parentThreadId = input.parentThreadId;
+      if ("visibility" in input) set.visibility = input.visibility;
 
-  const updated = db
-    .update(threads)
-    .set(set)
-    .where(eq(threads.id, id))
-    .returning()
-    .get();
-  if (updated && "title" in input) {
-    upsertThreadTitleSearchSegments(db, {
-      threadId: updated.id,
-      title: updated.title,
-      titleFallback: updated.titleFallback,
-      updatedAt: now,
-    });
-  }
-  if (updated && changes.length > 0) {
-    notifier.notifyThread(id, changes, {
-      projectId: existing.projectId,
-    });
-  }
-  return updated ?? null;
+      const updated = db
+        .update(threads)
+        .set(set)
+        .where(eq(threads.id, id))
+        .returning()
+        .get();
+      if (updated && "title" in input) {
+        upsertThreadTitleSearchSegments(db, {
+          threadId: updated.id,
+          title: updated.title,
+          titleFallback: updated.titleFallback,
+          updatedAt: now,
+        });
+      }
+      if (updated && changes.length > 0) {
+        notifier.notifyThread(id, changes, {
+          projectId: existing.projectId,
+        });
+      }
+      return updated ?? null;
+    },
+    { behavior: "immediate" },
+  );
 }
 
 export interface ThreadExecutionOverride {
@@ -1963,15 +2074,31 @@ export function deleteThread(
   db: ThreadWriteConnection,
   notifier: DbNotifier,
   id: string,
+  actor: ThreadLifecycleActor = { kind: "automation", approvalId: null },
 ) {
-  const existing = db.select().from(threads).where(eq(threads.id, id)).get();
-  if (!existing) return false;
-  db.delete(threads).where(eq(threads.id, id)).run();
-  notifier.notifyThread(id, ["thread-deleted"], {
-    projectId: existing.projectId,
-  });
-  notifier.notifyProject(existing.projectId, ["threads-changed"]);
-  return true;
+  return db.transaction(
+    (db) => {
+      const existing = db
+        .select()
+        .from(threads)
+        .where(eq(threads.id, id))
+        .get();
+      if (!existing) return false;
+      authorizeThreadLifecycleMutation(db, {
+        action: "delete",
+        actor,
+        now: Date.now(),
+        thread: existing,
+      });
+      db.delete(threads).where(eq(threads.id, id)).run();
+      notifier.notifyThread(id, ["thread-deleted"], {
+        projectId: existing.projectId,
+      });
+      notifier.notifyProject(existing.projectId, ["threads-changed"]);
+      return true;
+    },
+    { behavior: "immediate" },
+  );
 }
 
 export function markThreadDeleted(
@@ -1979,15 +2106,37 @@ export function markThreadDeleted(
   notifier: DbNotifier,
   args: MarkThreadDeletedArgs,
 ) {
-  const updated = db
-    .update(threads)
-    .set({
-      deletedAt: args.deletedAt ?? Date.now(),
-      updatedAt: Date.now(),
-    })
-    .where(eq(threads.id, args.threadId))
-    .returning()
-    .get();
+  const now = Date.now();
+  const updated = db.transaction(
+    (tx) => {
+      const existing = tx
+        .select()
+        .from(threads)
+        .where(eq(threads.id, args.threadId))
+        .get();
+      if (!existing) return null;
+      {
+        authorizeThreadLifecycleMutation(tx, {
+          action: "close",
+          actor: args.actor,
+          now,
+          thread: existing,
+        });
+      }
+      return (
+        tx
+          .update(threads)
+          .set({
+            deletedAt: args.deletedAt ?? now,
+            updatedAt: now,
+          })
+          .where(eq(threads.id, args.threadId))
+          .returning()
+          .get() ?? null
+      );
+    },
+    { behavior: "immediate" },
+  );
 
   if (updated) {
     notifier.notifyThread(args.threadId, ["thread-deleted"], {
@@ -2003,14 +2152,36 @@ export function archiveThread(
   db: ThreadWriteConnection,
   notifier: DbNotifier,
   id: string,
+  actor: ThreadLifecycleActor,
 ) {
   const now = Date.now();
-  const updated = db
-    .update(threads)
-    .set({ archivedAt: now, updatedAt: now })
-    .where(eq(threads.id, id))
-    .returning()
-    .get();
+  const updated = db.transaction(
+    (tx) => {
+      const existing = tx
+        .select()
+        .from(threads)
+        .where(eq(threads.id, id))
+        .get();
+      if (!existing) return null;
+      {
+        authorizeThreadLifecycleMutation(tx, {
+          action: "archive",
+          actor,
+          now,
+          thread: existing,
+        });
+      }
+      return (
+        tx
+          .update(threads)
+          .set({ archivedAt: now, updatedAt: now })
+          .where(eq(threads.id, id))
+          .returning()
+          .get() ?? null
+      );
+    },
+    { behavior: "immediate" },
+  );
   if (updated) {
     notifier.notifyThread(id, ["archived-changed"], {
       projectId: updated.projectId,
@@ -2023,20 +2194,38 @@ export function unarchiveThread(
   db: DbConnection,
   notifier: DbNotifier,
   id: string,
+  actor: ThreadLifecycleActor = { kind: "automation", approvalId: null },
 ) {
-  const now = Date.now();
-  const updated = db
-    .update(threads)
-    .set({ archivedAt: null, updatedAt: now })
-    .where(eq(threads.id, id))
-    .returning()
-    .get();
-  if (updated) {
-    notifier.notifyThread(id, ["archived-changed"], {
-      projectId: updated.projectId,
-    });
-  }
-  return updated ?? null;
+  return db.transaction(
+    (db) => {
+      const now = Date.now();
+      const existing = db
+        .select()
+        .from(threads)
+        .where(eq(threads.id, id))
+        .get();
+      if (!existing) return null;
+      authorizeThreadLifecycleMutation(db, {
+        action: "restore",
+        actor,
+        now: Date.now(),
+        thread: existing,
+      });
+      const updated = db
+        .update(threads)
+        .set({ archivedAt: null, updatedAt: now })
+        .where(eq(threads.id, id))
+        .returning()
+        .get();
+      if (updated) {
+        notifier.notifyThread(id, ["archived-changed"], {
+          projectId: updated.projectId,
+        });
+      }
+      return updated ?? null;
+    },
+    { behavior: "immediate" },
+  );
 }
 
 export type ApplyThreadLifecycleEventNoopReason =
@@ -2067,7 +2256,9 @@ export class ThreadLifecycleEventNotAppliedError extends Error {
   readonly reason: ApplyThreadLifecycleEventNoopReason;
 
   constructor(args: ThreadLifecycleEventNotAppliedErrorArgs) {
-    super(`Thread lifecycle event not applied (${args.reason}): ${args.detail}`);
+    super(
+      `Thread lifecycle event not applied (${args.reason}): ${args.detail}`,
+    );
     this.name = "ThreadLifecycleEventNotAppliedError";
     this.detail = args.detail;
     this.reason = args.reason;
