@@ -533,6 +533,16 @@ export const threads = sqliteTable(
     creationProvenance: text("creation_provenance", {
       enum: threadCreationProvenanceValues,
     }),
+    pinSource: text("pin_source", {
+      enum: ["creation-default", "human", "bot-policy"],
+    }),
+    humanPinProtected: integer("human_pin_protected", { mode: "boolean" })
+      .notNull()
+      .default(false),
+    manualUnpin: integer("manual_unpin", { mode: "boolean" })
+      .notNull()
+      .default(false),
+    mutationRevision: integer("mutation_revision").notNull().default(0),
     visibility: text("visibility", { enum: threadVisibilityValues })
       .notNull()
       .default("visible"),
@@ -592,6 +602,11 @@ export const threadLifecycleApprovals = sqliteTable(
       .notNull()
       .references(() => threads.id, { onDelete: "cascade" }),
     action: text("action", { enum: threadLifecycleActionValues }).notNull(),
+    payloadHash: text("payload_hash"),
+    expectedRevision: integer("expected_revision"),
+    requesterId: text("requester_id"),
+    audience: text("audience"),
+    revokedAt: integer("revoked_at"),
     expiresAt: integer("expires_at").notNull(),
     consumedAt: integer("consumed_at"),
     issuedAt: integer("issued_at").notNull(),

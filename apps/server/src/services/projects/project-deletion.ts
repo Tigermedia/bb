@@ -10,7 +10,6 @@ import {
   type DbQueryConnection,
 } from "@bb/db";
 import {
-  ownerManualThreadLifecycleActor,
   type Environment,
   type Thread,
   type ThreadLifecycleActor,
@@ -32,7 +31,10 @@ import {
 } from "../threads/thread-lifecycle.js";
 import { NotificationBuffer } from "../lib/notification-buffer.js";
 import { emitPluginThreadDeleted } from "../plugins/plugin-thread-events.js";
-import { asThreadLifecycleApiError } from "../threads/thread-lifecycle-actor.js";
+import {
+  assertBatchThreadMutationAllowed,
+  asThreadLifecycleApiError,
+} from "../threads/thread-lifecycle-actor.js";
 
 interface ProjectDeletionArgs {
   projectId: string;
@@ -194,6 +196,12 @@ export async function advanceProjectDeletion(
   const projectThreads = listProjectDeletionThreads(deps.db, {
     projectId: args.projectId,
   });
+  assertBatchThreadMutationAllowed(
+    deps.db,
+    projectThreads.map((thread) => thread.id),
+    { kind: "automation", approvalId: null },
+    "close",
+  );
   for (const thread of projectThreads) {
     const environment = thread.environmentId
       ? (environmentsById.get(thread.environmentId) ?? null)
@@ -201,7 +209,7 @@ export async function advanceProjectDeletion(
 
     if (thread.deletedAt === null) {
       const deletedThread = markThreadDeleted(deps.db, deps.hub, {
-        actor: ownerManualThreadLifecycleActor,
+        actor: { kind: "automation", approvalId: null },
         threadId: thread.id,
       });
       if (deletedThread) emitPluginThreadDeleted(deletedThread);

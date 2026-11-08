@@ -403,6 +403,13 @@ export const threadSchema = z.object({
   originKind: threadOriginKindSchema.nullable(),
   originPluginId: z.string().nullable(),
   creationProvenance: threadCreationProvenanceSchema.nullable(),
+  pinSource: z
+    .enum(["creation-default", "human", "bot-policy"])
+    .nullable()
+    .optional(),
+  humanPinProtected: z.boolean().optional(),
+  manualUnpin: z.boolean().optional(),
+  mutationRevision: z.number().int().nonnegative().optional(),
   visibility: threadVisibilitySchema,
   archivedAt: z.number().nullable(),
   pinnedAt: z.number().nullable(),

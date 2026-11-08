@@ -1,3 +1,4 @@
+import type { KeyObject } from "node:crypto";
 import type { CustomProviderModel } from "@bb/config/bb-app-managed-config";
 import type { DbConnection } from "@bb/db";
 import type { FeatureFlags, ProviderNativeSkillRoots } from "@bb/domain";
@@ -47,6 +48,7 @@ export interface AppDeps {
   config: ServerRuntimeConfig;
   db: DbConnection;
   ownerLifecycleSecret?: string;
+  ownerApprovalPublicKey?: KeyObject;
   hub: NotificationHub;
   lifecycleDedupers: LifecycleDedupers;
   logger: ServerLogger;

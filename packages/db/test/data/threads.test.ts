@@ -38,10 +38,7 @@ import {
   listThreadSections,
   renameThreadSection,
 } from "../../src/data/thread-sections.js";
-import {
-  createProject,
-  markProjectDeleted,
-} from "../../src/data/projects.js";
+import { createProject, markProjectDeleted } from "../../src/data/projects.js";
 import { upsertHost } from "../../src/data/hosts.js";
 import { createEnvironment } from "../../src/data/environments.js";
 import { createMigratedConnection } from "../helpers/migrated-connection.js";
@@ -88,7 +85,13 @@ describe("threads", () => {
       });
       expect(hasActiveThreadAttention(db)).toBe(true);
 
-      updateThread(db, noopNotifier, thread.id, { lastReadAt: 2_000 });
+      updateThread(
+        db,
+        noopNotifier,
+        thread.id,
+        { lastReadAt: 2_000 },
+        ownerManualThreadLifecycleActor,
+      );
       expect(hasActiveThreadAttention(db)).toBe(false);
 
       createPendingInteraction(db, {
@@ -101,7 +104,12 @@ describe("threads", () => {
       });
       expect(hasActiveThreadAttention(db)).toBe(true);
 
-      archiveThread(db, noopNotifier, thread.id, ownerManualThreadLifecycleActor);
+      archiveThread(
+        db,
+        noopNotifier,
+        thread.id,
+        ownerManualThreadLifecycleActor,
+      );
       expect(hasActiveThreadAttention(db)).toBe(false);
 
       const sideChat = createThread(db, noopNotifier, {
@@ -153,7 +161,10 @@ describe("threads", () => {
       providerId: "codex",
       title: "Deleted title",
     });
-    markThreadDeleted(db, noopNotifier, { actor: ownerManualThreadLifecycleActor,  threadId: deleted.id });
+    markThreadDeleted(db, noopNotifier, {
+      actor: ownerManualThreadLifecycleActor,
+      threadId: deleted.id,
+    });
 
     expect(
       listThreadMentionRowsByIds(db, [
@@ -193,7 +204,10 @@ describe("threads", () => {
       visibility: "hidden",
     });
 
-    pinThread(db, noopNotifier, { threadId: hidden.id });
+    pinThread(db, noopNotifier, {
+      actor: ownerManualThreadLifecycleActor,
+      threadId: hidden.id,
+    });
     markThreadAttentionRequested(db, noopNotifier, { threadId: hidden.id });
     createPendingInteraction(db, {
       payload: "{}",
@@ -250,9 +264,15 @@ describe("threads", () => {
       providerId: "codex",
       visibility: "hidden",
     });
-    updateThread(db, noopNotifier, movedIntoSection.id, {
-      sectionId: section.id,
-    });
+    updateThread(
+      db,
+      noopNotifier,
+      movedIntoSection.id,
+      {
+        sectionId: section.id,
+      },
+      ownerManualThreadLifecycleActor,
+    );
     expect(getThread(db, movedIntoSection.id)?.sectionId).toBe(section.id);
   });
 
@@ -316,6 +336,7 @@ describe("threads", () => {
       });
 
       const pinned = pinThread(db, spy, {
+        actor: ownerManualThreadLifecycleActor,
         pinnedAt: 2_000,
         threadId: thread.id,
       });
@@ -328,16 +349,25 @@ describe("threads", () => {
         { projectId: project.id },
       );
 
-      const pinnedAgain = pinThread(db, spy, { threadId: thread.id });
+      const pinnedAgain = pinThread(db, spy, {
+        actor: ownerManualThreadLifecycleActor,
+        threadId: thread.id,
+      });
       expect(pinnedAgain?.pinSortKey).toBe(pinned?.pinSortKey);
       expect(spy.notifyThread).toHaveBeenCalledTimes(1);
 
-      const unpinned = unpinThread(db, spy, { threadId: thread.id });
+      const unpinned = unpinThread(db, spy, {
+        actor: ownerManualThreadLifecycleActor,
+        threadId: thread.id,
+      });
       expect(unpinned?.pinnedAt).toBeNull();
       expect(unpinned?.pinSortKey).toBeNull();
       expect(spy.notifyThread).toHaveBeenCalledTimes(2);
 
-      unpinThread(db, spy, { threadId: thread.id });
+      unpinThread(db, spy, {
+        actor: ownerManualThreadLifecycleActor,
+        threadId: thread.id,
+      });
       expect(spy.notifyThread).toHaveBeenCalledTimes(2);
     } finally {
       vi.useRealTimers();
@@ -369,8 +399,14 @@ describe("threads", () => {
         providerId: "codex",
       });
 
-      pinThread(db, noopNotifier, { threadId: first.id });
-      pinThread(db, noopNotifier, { threadId: third.id });
+      pinThread(db, noopNotifier, {
+        actor: ownerManualThreadLifecycleActor,
+        threadId: first.id,
+      });
+      pinThread(db, noopNotifier, {
+        actor: ownerManualThreadLifecycleActor,
+        threadId: third.id,
+      });
 
       expect(
         listThreads(db, { projectId: project.id }).map((thread) => thread.id),
@@ -402,15 +438,29 @@ describe("threads", () => {
       projectId: otherProject.id,
       providerId: "codex",
     });
-    pinThread(db, noopNotifier, { threadId: first.id });
-    pinThread(db, noopNotifier, { threadId: second.id });
-    pinThread(db, noopNotifier, { threadId: third.id });
-    pinThread(db, noopNotifier, { threadId: otherProjectThread.id });
+    pinThread(db, noopNotifier, {
+      actor: ownerManualThreadLifecycleActor,
+      threadId: first.id,
+    });
+    pinThread(db, noopNotifier, {
+      actor: ownerManualThreadLifecycleActor,
+      threadId: second.id,
+    });
+    pinThread(db, noopNotifier, {
+      actor: ownerManualThreadLifecycleActor,
+      threadId: third.id,
+    });
+    pinThread(db, noopNotifier, {
+      actor: ownerManualThreadLifecycleActor,
+      threadId: otherProjectThread.id,
+    });
 
-    expect(listActiveVisiblePinnedThreadRoots(db).map((thread) => thread.id))
-      .toEqual([otherProjectThread.id, third.id, second.id, first.id]);
+    expect(
+      listActiveVisiblePinnedThreadRoots(db).map((thread) => thread.id),
+    ).toEqual([otherProjectThread.id, third.id, second.id, first.id]);
 
     const result = reorderPinnedThread({
+      actor: ownerManualThreadLifecycleActor,
       db,
       notifier: noopNotifier,
       threadId: first.id,
@@ -419,8 +469,9 @@ describe("threads", () => {
     });
 
     expect(result.kind).toBe("reordered");
-    expect(listActiveVisiblePinnedThreadRoots(db).map((thread) => thread.id))
-      .toEqual([first.id, otherProjectThread.id, third.id, second.id]);
+    expect(
+      listActiveVisiblePinnedThreadRoots(db).map((thread) => thread.id),
+    ).toEqual([first.id, otherProjectThread.id, third.id, second.id]);
   });
 
   it("rejects pinned reorder for unpinned threads, stale neighbors, and hidden child pins", () => {
@@ -442,12 +493,22 @@ describe("threads", () => {
       projectId: project.id,
       providerId: "codex",
     });
-    pinThread(db, noopNotifier, { threadId: pinned.id });
-    pinThread(db, noopNotifier, { threadId: pinnedParent.id });
-    pinThread(db, noopNotifier, { threadId: pinnedChild.id });
+    pinThread(db, noopNotifier, {
+      actor: ownerManualThreadLifecycleActor,
+      threadId: pinned.id,
+    });
+    pinThread(db, noopNotifier, {
+      actor: ownerManualThreadLifecycleActor,
+      threadId: pinnedParent.id,
+    });
+    pinThread(db, noopNotifier, {
+      actor: ownerManualThreadLifecycleActor,
+      threadId: pinnedChild.id,
+    });
 
     expect(
       reorderPinnedThread({
+        actor: ownerManualThreadLifecycleActor,
         db,
         notifier: noopNotifier,
         threadId: unpinned.id,
@@ -457,6 +518,7 @@ describe("threads", () => {
     ).toBe("not_pinned");
     expect(
       reorderPinnedThread({
+        actor: ownerManualThreadLifecycleActor,
         db,
         notifier: noopNotifier,
         threadId: pinned.id,
@@ -466,6 +528,7 @@ describe("threads", () => {
     ).toBe("stale_neighbor");
     expect(
       reorderPinnedThread({
+        actor: ownerManualThreadLifecycleActor,
         db,
         notifier: noopNotifier,
         threadId: pinned.id,
@@ -475,6 +538,7 @@ describe("threads", () => {
     ).toBe("stale_neighbor");
     expect(
       reorderPinnedThread({
+        actor: ownerManualThreadLifecycleActor,
         db,
         notifier: noopNotifier,
         threadId: pinnedChild.id,
@@ -521,9 +585,24 @@ describe("threads", () => {
       providerId: "codex",
       sectionId: workSection.id,
     });
-    archiveThread(db, noopNotifier, archivedInWork.id, ownerManualThreadLifecycleActor);
-    archiveThread(db, noopNotifier, otherArchivedInWork.id, ownerManualThreadLifecycleActor);
-    archiveThread(db, noopNotifier, archivedInPlay.id, ownerManualThreadLifecycleActor);
+    archiveThread(
+      db,
+      noopNotifier,
+      archivedInWork.id,
+      ownerManualThreadLifecycleActor,
+    );
+    archiveThread(
+      db,
+      noopNotifier,
+      otherArchivedInWork.id,
+      ownerManualThreadLifecycleActor,
+    );
+    archiveThread(
+      db,
+      noopNotifier,
+      archivedInPlay.id,
+      ownerManualThreadLifecycleActor,
+    );
 
     const workArchived = listThreads(db, {
       projectId: project.id,
@@ -555,8 +634,18 @@ describe("threads", () => {
       providerId: "codex",
       sectionId: section.id,
     });
-    archiveThread(db, noopNotifier, looseArchived.id, ownerManualThreadLifecycleActor);
-    archiveThread(db, noopNotifier, sectioned.id, ownerManualThreadLifecycleActor);
+    archiveThread(
+      db,
+      noopNotifier,
+      looseArchived.id,
+      ownerManualThreadLifecycleActor,
+    );
+    archiveThread(
+      db,
+      noopNotifier,
+      sectioned.id,
+      ownerManualThreadLifecycleActor,
+    );
 
     const unsectionedArchived = listThreads(db, {
       projectId: project.id,
@@ -657,7 +746,12 @@ describe("threads", () => {
       created.push(thread);
     }
     for (const thread of created) {
-      archiveThread(db, noopNotifier, thread.id, ownerManualThreadLifecycleActor);
+      archiveThread(
+        db,
+        noopNotifier,
+        thread.id,
+        ownerManualThreadLifecycleActor,
+      );
       await new Promise((resolve) => setTimeout(resolve, 2));
     }
 
@@ -715,7 +809,12 @@ describe("threads", () => {
       parentThreadId: parent.id,
     });
 
-    archiveThread(db, noopNotifier, archivedChild.id, ownerManualThreadLifecycleActor);
+    archiveThread(
+      db,
+      noopNotifier,
+      archivedChild.id,
+      ownerManualThreadLifecycleActor,
+    );
 
     expect(
       countNonDeletedAssignedChildThreads(db, {
@@ -736,7 +835,10 @@ describe("threads", () => {
       parentThreadId: parent.id,
     });
 
-    markThreadDeleted(db, noopNotifier, { actor: ownerManualThreadLifecycleActor,  threadId: deletedChild.id });
+    markThreadDeleted(db, noopNotifier, {
+      actor: ownerManualThreadLifecycleActor,
+      threadId: deletedChild.id,
+    });
 
     expect(
       countNonDeletedAssignedChildThreads(db, {
@@ -852,9 +954,15 @@ describe("threads", () => {
       projectId: project.id,
       providerId: "codex",
     });
-    const updated = updateThread(db, noopNotifier, thread.id, {
-      title: "New title",
-    });
+    const updated = updateThread(
+      db,
+      noopNotifier,
+      thread.id,
+      {
+        title: "New title",
+      },
+      ownerManualThreadLifecycleActor,
+    );
     expect(updated?.title).toBe("New title");
   });
 
@@ -873,9 +981,15 @@ describe("threads", () => {
     });
     const section = mustCreateThreadSection(db, "Work/Q3");
 
-    const updated = updateThread(db, spy, thread.id, {
-      sectionId: section.id,
-    });
+    const updated = updateThread(
+      db,
+      spy,
+      thread.id,
+      {
+        sectionId: section.id,
+      },
+      ownerManualThreadLifecycleActor,
+    );
 
     expect(updated?.sectionId).toBe(section.id);
     expect(spy.notifyThread).toHaveBeenCalledWith(
@@ -1073,9 +1187,15 @@ describe("threads", () => {
       providerId: "codex",
     });
 
-    updateThread(db, spy, childThread.id, {
-      parentThreadId: parentThread.id,
-    });
+    updateThread(
+      db,
+      spy,
+      childThread.id,
+      {
+        parentThreadId: parentThread.id,
+      },
+      ownerManualThreadLifecycleActor,
+    );
 
     expect(spy.notifyThread).toHaveBeenCalledWith(
       childThread.id,
@@ -1105,9 +1225,15 @@ describe("threads", () => {
       providerId: "codex",
     });
 
-    updateThread(db, spy, thread.id, {
-      environmentId: environment.id,
-    });
+    updateThread(
+      db,
+      spy,
+      thread.id,
+      {
+        environmentId: environment.id,
+      },
+      ownerManualThreadLifecycleActor,
+    );
 
     expect(spy.notifyThread).toHaveBeenCalledWith(
       thread.id,
@@ -1125,14 +1251,26 @@ describe("threads", () => {
         projectId: project.id,
         providerId: "codex",
       });
-      updateThread(db, noopNotifier, thread.id, {
-        lastReadAt: thread.latestAttentionAt,
-      });
+      updateThread(
+        db,
+        noopNotifier,
+        thread.id,
+        {
+          lastReadAt: thread.latestAttentionAt,
+        },
+        ownerManualThreadLifecycleActor,
+      );
 
       vi.setSystemTime(2_000);
-      const updated = updateThread(db, noopNotifier, thread.id, {
-        title: "New title",
-      });
+      const updated = updateThread(
+        db,
+        noopNotifier,
+        thread.id,
+        {
+          title: "New title",
+        },
+        ownerManualThreadLifecycleActor,
+      );
 
       expect(updated?.title).toBe("New title");
       expect(updated?.updatedAt).toBe(2_000);
@@ -1152,14 +1290,26 @@ describe("threads", () => {
         projectId: project.id,
         providerId: "codex",
       });
-      updateThread(db, noopNotifier, thread.id, {
-        lastReadAt: null,
-      });
+      updateThread(
+        db,
+        noopNotifier,
+        thread.id,
+        {
+          lastReadAt: null,
+        },
+        ownerManualThreadLifecycleActor,
+      );
 
       vi.setSystemTime(2_000);
-      const updated = updateThread(db, noopNotifier, thread.id, {
-        title: "New title",
-      });
+      const updated = updateThread(
+        db,
+        noopNotifier,
+        thread.id,
+        {
+          title: "New title",
+        },
+        ownerManualThreadLifecycleActor,
+      );
 
       expect(updated?.updatedAt).toBe(2_000);
       expect(updated?.lastReadAt).toBeNull();
@@ -1185,9 +1335,15 @@ describe("threads", () => {
         projectId: project.id,
         providerId: "codex",
       });
-      updateThread(db, noopNotifier, thread.id, {
-        lastReadAt: thread.latestAttentionAt,
-      });
+      updateThread(
+        db,
+        noopNotifier,
+        thread.id,
+        {
+          lastReadAt: thread.latestAttentionAt,
+        },
+        ownerManualThreadLifecycleActor,
+      );
 
       vi.setSystemTime(2_000);
       const updated = markThreadAttentionRequested(db, spy, {
@@ -1213,9 +1369,23 @@ describe("threads", () => {
       projectId: project.id,
       providerId: "codex",
     });
-    expect(deleteThread(db, noopNotifier, thread.id)).toBe(true);
+    expect(
+      deleteThread(
+        db,
+        noopNotifier,
+        thread.id,
+        ownerManualThreadLifecycleActor,
+      ),
+    ).toBe(true);
     expect(getThread(db, thread.id)).toBeNull();
-    expect(deleteThread(db, noopNotifier, thread.id)).toBe(false);
+    expect(
+      deleteThread(
+        db,
+        noopNotifier,
+        thread.id,
+        ownerManualThreadLifecycleActor,
+      ),
+    ).toBe(false);
   });
 
   it("marks a thread deleted and hides it from public list queries", () => {
@@ -1225,7 +1395,8 @@ describe("threads", () => {
       providerId: "codex",
     });
 
-    const deleted = markThreadDeleted(db, noopNotifier, { actor: ownerManualThreadLifecycleActor, 
+    const deleted = markThreadDeleted(db, noopNotifier, {
+      actor: ownerManualThreadLifecycleActor,
       threadId: thread.id,
     });
 
@@ -1240,7 +1411,12 @@ describe("threads", () => {
       projectId: project.id,
       providerId: "codex",
     });
-    const archived = archiveThread(db, noopNotifier, thread.id, ownerManualThreadLifecycleActor);
+    const archived = archiveThread(
+      db,
+      noopNotifier,
+      thread.id,
+      ownerManualThreadLifecycleActor,
+    );
     expect(archived?.archivedAt).toBeTypeOf("number");
   });
 
@@ -1252,7 +1428,12 @@ describe("threads", () => {
     });
     archiveThread(db, noopNotifier, thread.id, ownerManualThreadLifecycleActor);
 
-    const unarchived = unarchiveThread(db, noopNotifier, thread.id);
+    const unarchived = unarchiveThread(
+      db,
+      noopNotifier,
+      thread.id,
+      ownerManualThreadLifecycleActor,
+    );
     expect(unarchived?.archivedAt).toBeNull();
     expect(unarchived?.latestAttentionAt).toBe(thread.latestAttentionAt);
   });
@@ -1312,8 +1493,16 @@ describe("threads", () => {
       status: "idle",
     });
 
-    archiveThread(db, noopNotifier, archivedThread.id, ownerManualThreadLifecycleActor);
-    markThreadDeleted(db, noopNotifier, { actor: ownerManualThreadLifecycleActor,  threadId: deletedThread.id });
+    archiveThread(
+      db,
+      noopNotifier,
+      archivedThread.id,
+      ownerManualThreadLifecycleActor,
+    );
+    markThreadDeleted(db, noopNotifier, {
+      actor: ownerManualThreadLifecycleActor,
+      threadId: deletedThread.id,
+    });
 
     expect(
       countLiveThreadsInEnvironment(db, { environmentId: environment.id }),
@@ -1465,8 +1654,16 @@ describe("threads", () => {
       environmentId: environment.id,
       providerId: "codex",
     });
-    archiveThread(db, noopNotifier, archivedThread.id, ownerManualThreadLifecycleActor);
-    markThreadDeleted(db, noopNotifier, { actor: ownerManualThreadLifecycleActor,  threadId: deletedThread.id });
+    archiveThread(
+      db,
+      noopNotifier,
+      archivedThread.id,
+      ownerManualThreadLifecycleActor,
+    );
+    markThreadDeleted(db, noopNotifier, {
+      actor: ownerManualThreadLifecycleActor,
+      threadId: deletedThread.id,
+    });
 
     expect([...listHostThreadIds(db, { hostId: host.id })].sort()).toEqual(
       [
@@ -1490,9 +1687,15 @@ describe("thread lifecycle transitions and read state", () => {
         providerId: "codex",
         status: "active",
       });
-      updateThread(db, noopNotifier, activeThread.id, {
-        lastReadAt: activeThread.latestAttentionAt,
-      });
+      updateThread(
+        db,
+        noopNotifier,
+        activeThread.id,
+        {
+          lastReadAt: activeThread.latestAttentionAt,
+        },
+        ownerManualThreadLifecycleActor,
+      );
 
       vi.setSystemTime(2_000);
       const idleThread = requireThreadLifecycleEventApplied(
@@ -1506,9 +1709,15 @@ describe("thread lifecycle transitions and read state", () => {
       expect(idleThread.latestAttentionAt).toBe(2_000);
       expect(idleThread.lastReadAt).toBe(1_000);
 
-      updateThread(db, noopNotifier, activeThread.id, {
-        lastReadAt: idleThread.latestAttentionAt,
-      });
+      updateThread(
+        db,
+        noopNotifier,
+        activeThread.id,
+        {
+          lastReadAt: idleThread.latestAttentionAt,
+        },
+        ownerManualThreadLifecycleActor,
+      );
       vi.setSystemTime(3_000);
       const activeAgainThread = requireThreadLifecycleEventApplied(
         applyThreadLifecycleEvent(db, {
@@ -1540,9 +1749,15 @@ describe("thread lifecycle transitions and read state", () => {
         providerId: "codex",
         status: "active",
       });
-      updateThread(db, noopNotifier, childThread.id, {
-        lastReadAt: childThread.latestAttentionAt,
-      });
+      updateThread(
+        db,
+        noopNotifier,
+        childThread.id,
+        {
+          lastReadAt: childThread.latestAttentionAt,
+        },
+        ownerManualThreadLifecycleActor,
+      );
 
       vi.setSystemTime(2_000);
       const idleThread = requireThreadLifecycleEventApplied(
@@ -1571,9 +1786,15 @@ describe("thread lifecycle transitions and read state", () => {
         providerId: "codex",
         status: "stopping",
       });
-      updateThread(db, noopNotifier, stoppingThread.id, {
-        lastReadAt: stoppingThread.latestAttentionAt,
-      });
+      updateThread(
+        db,
+        noopNotifier,
+        stoppingThread.id,
+        {
+          lastReadAt: stoppingThread.latestAttentionAt,
+        },
+        ownerManualThreadLifecycleActor,
+      );
 
       vi.setSystemTime(2_000);
       const erroredThread = requireThreadLifecycleEventApplied(

@@ -211,6 +211,10 @@ function createThreadListEntry(
 ): ThreadWithPendingInteractionState {
   return {
     ...args.thread,
+    pinSource: null,
+    humanPinProtected: false,
+    manualUnpin: false,
+    mutationRevision: 0,
     modelOverride: null,
     reasoningLevelOverride: null,
     environmentBranchName: null,
@@ -440,7 +444,10 @@ describe("thread runtime display", () => {
       {
         now: 1_000,
         threads: [empty.thread, waiting.thread, failed.thread].map((thread) =>
-          createThreadListEntry({ environmentHostId: hostId, thread: { ...thread, pinSortKey: null } }),
+          createThreadListEntry({
+            environmentHostId: hostId,
+            thread: { ...thread, pinSortKey: null },
+          }),
         ),
       },
     );

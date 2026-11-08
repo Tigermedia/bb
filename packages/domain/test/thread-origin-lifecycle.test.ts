@@ -6,10 +6,10 @@ import {
 } from "../src/thread-origin-lifecycle.js";
 
 describe("creation provenance", () => {
-  it("maps app creates to manual and cli or plugin creates to bot", () => {
-    expect(creationProvenanceForCreateOrigin("app")).toBe("manual");
-    expect(creationProvenanceForCreateOrigin("cli")).toBe("bot");
-    expect(creationProvenanceForCreateOrigin("plugin")).toBe("bot");
+  it("treats every caller-declared origin as untrusted", () => {
+    expect(creationProvenanceForCreateOrigin("app")).toBeNull();
+    expect(creationProvenanceForCreateOrigin("cli")).toBeNull();
+    expect(creationProvenanceForCreateOrigin("plugin")).toBeNull();
     expect(creationProvenanceForCreateOrigin("sdk")).toBeNull();
     expect(creationProvenanceForCreateOrigin(null)).toBeNull();
   });
@@ -29,6 +29,9 @@ describe("decideThreadLifecycle", () => {
         action: "close",
         actor: { kind: "automation", approvalId: null },
         creationProvenance: "bot",
+        pinSource: "bot-policy",
+        humanPinProtected: false,
+        manualUnpin: false,
       }),
     ).toEqual({ allow: true, consumeApprovalId: null, reason: null });
   });

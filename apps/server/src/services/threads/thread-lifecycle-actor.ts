@@ -1,14 +1,19 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { ThreadLifecycleProtectedError } from "@bb/db";
 import {
+  getThread,
+  ThreadLifecycleProtectedError,
+  type DbConnection,
+} from "@bb/db";
+import {
+  decideThreadLifecycle,
   ownerManualThreadLifecycleActor,
+  type ThreadLifecycleAction,
   type ThreadLifecycleActor,
 } from "@bb/domain";
 import { ApiError } from "../../errors.js";
 
 export const OWNER_LIFECYCLE_COOKIE_NAME = "bb_owner_lifecycle";
-export const THREAD_LIFECYCLE_APPROVAL_HEADER_NAME =
-  "x-bb-lifecycle-approval";
+export const THREAD_LIFECYCLE_APPROVAL_HEADER_NAME = "x-bb-lifecycle-approval";
 
 export function ownerLifecycleSecretFor(deps: {
   ownerLifecycleSecret?: string;
@@ -64,13 +69,7 @@ export function resolveThreadLifecycleActor(
   context: { req: { header(name: string): string | undefined } },
   secret: string | undefined,
 ): ThreadLifecycleActor {
-  if (
-    secret !== undefined &&
-    secret.length > 0 &&
-    ownerLifecycleCookieMatches(context.req.header("cookie"), secret)
-  ) {
-    return ownerManualThreadLifecycleActor;
-  }
+  void secret;
   const approvalId =
     context.req.header(THREAD_LIFECYCLE_APPROVAL_HEADER_NAME)?.trim() ?? "";
   return {
@@ -97,4 +96,33 @@ export function asThreadLifecycleApiError(error: unknown): never {
     });
   }
   throw error;
+}
+
+export function assertBatchThreadMutationAllowed(
+  db: DbConnection,
+  threadIds: readonly string[],
+  actor: ThreadLifecycleActor,
+  action: ThreadLifecycleAction,
+): void {
+  for (const threadId of new Set(threadIds)) {
+    const thread = getThread(db, threadId);
+    if (actor.kind === "owner-manual" && thread) continue;
+    if (
+      !thread ||
+      !decideThreadLifecycle({
+        action,
+        actor: { kind: "automation", approvalId: null },
+        creationProvenance: thread.creationProvenance,
+        pinSource: thread.pinSource,
+        humanPinProtected: thread.humanPinProtected,
+        manualUnpin: thread.manualUnpin,
+      }).allow
+    )
+      throw new ApiError(
+        403,
+        "thread_lifecycle_protected",
+        "Protected thread prevents a partial batch mutation",
+        { details: { threadId, action } },
+      );
+  }
 }

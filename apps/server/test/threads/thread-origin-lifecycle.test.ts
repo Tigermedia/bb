@@ -6,6 +6,7 @@ import {
 } from "@bb/db";
 import { createThreadRequestSchema } from "@bb/server-contract";
 import { describe, expect, it } from "vitest";
+import { ownerManualThreadLifecycleActor } from "@bb/domain";
 import { readJson } from "../helpers/json.js";
 import {
   seedEnvironment,
@@ -42,7 +43,7 @@ function automationJson(body: unknown, extraHeaders?: Record<string, string>) {
 }
 
 describe("thread origin lifecycle", () => {
-  it("derives provenance and the create-time pin from origin, not from the client", async () => {
+  it("does not trust caller-declared origin or provenance", async () => {
     const parsed = createThreadRequestSchema.parse({
       approved: true,
       creationProvenance: "bot",
@@ -116,18 +117,18 @@ describe("thread origin lifecycle", () => {
         startedOnBehalfOf: null,
       });
 
-      expect(manual.creationProvenance).toBe("manual");
-      expect(manual.pinnedAt).toEqual(expect.any(Number));
-      expect(hidden.creationProvenance).toBe("manual");
+      expect(manual.creationProvenance).toBeNull();
+      expect(manual.pinnedAt).toBeNull();
+      expect(hidden.creationProvenance).toBeNull();
       expect(hidden.pinnedAt).toBeNull();
-      expect(cli.creationProvenance).toBe("bot");
+      expect(cli.creationProvenance).toBeNull();
       expect(cli.pinnedAt).toBeNull();
       expect(sdk.creationProvenance).toBeNull();
       expect(sdk.pinnedAt).toBeNull();
     });
   });
 
-  it("blocks automatic archive and close and honors one exact approval", async () => {
+  it("blocks automatic archive, close and unsigned legacy approval transport", async () => {
     await withTestHarness(async (harness) => {
       const { host } = seedHostSession(harness.deps, {
         id: "host-lifecycle-gate",
@@ -191,7 +192,7 @@ describe("thread origin lifecycle", () => {
       );
       expect(headerOnly.status).toBe(403);
       const setCookie = headerOnly.headers.get("set-cookie");
-      expect(setCookie).toContain("bb_owner_lifecycle=");
+      expect(setCookie).toBeNull();
       const ownerArchive = await harness.app.request(
         `/api/v1/threads/${manual.id}/archive`,
         {
@@ -199,17 +200,20 @@ describe("thread origin lifecycle", () => {
           headers: { cookie: setCookie?.split(";")[0] ?? "" },
         },
       );
-      expect(ownerArchive.status).toBe(200);
-      expect(getThread(harness.db, manual.id)?.archivedAt).toEqual(
-        expect.any(Number),
+      expect(ownerArchive.status).toBe(403);
+      expect(getThread(harness.db, manual.id)?.archivedAt).toBeNull();
+      unarchiveThread(
+        harness.db,
+        harness.hub,
+        manual.id,
+        ownerManualThreadLifecycleActor,
       );
-      unarchiveThread(harness.db, harness.hub, manual.id);
 
       const botArchive = await harness.app.request(
         `/api/v1/threads/${bot.id}/archive`,
         automationPost(),
       );
-      expect(botArchive.status).toBe(200);
+      expect(botArchive.status).toBe(403);
       unarchiveThread(harness.db, harness.hub, bot.id);
 
       const bulkDenied = await harness.app.request(
@@ -224,19 +228,20 @@ describe("thread origin lifecycle", () => {
         `/api/v1/threads/${bot.id}/archive-all`,
         automationPost(),
       );
-      expect(partial.status).toBe(200);
-      expect(await readJson(partial)).toMatchObject({
-        archivedThreadIds: [bot.id],
-      });
+      expect(partial.status).toBe(403);
+      expect(getThread(harness.db, bot.id)?.archivedAt).toBeNull();
       expect(getThread(harness.db, manualChild.id)?.archivedAt).toBeNull();
       unarchiveThread(harness.db, harness.hub, bot.id);
 
-      const approval = issueThreadLifecycleApproval(harness.db, {
-        action: "archive",
-        expiresAt: Date.now() + 60_000,
-        source: { kind: "owner-card", ref: "card-1" },
-        threadId: manual.id,
-      });
+      expect(() =>
+        issueThreadLifecycleApproval(harness.db, {
+          action: "archive",
+          expiresAt: Date.now() + 60_000,
+          source: { kind: "owner-card", ref: "card-1" },
+          threadId: manual.id,
+        }),
+      ).toThrow("Trusted signed owner approval");
+      const approval = { approvalId: "unsigned-card" };
       const wrongSession = await harness.app.request(
         `/api/v1/threads/${unknown.id}/archive`,
         {
@@ -271,8 +276,13 @@ describe("thread origin lifecycle", () => {
           },
         },
       );
-      expect(exact.status).toBe(200);
-      unarchiveThread(harness.db, harness.hub, manual.id);
+      expect(exact.status).toBe(403);
+      unarchiveThread(
+        harness.db,
+        harness.hub,
+        manual.id,
+        ownerManualThreadLifecycleActor,
+      );
       const replay = await harness.app.request(
         `/api/v1/threads/${manual.id}/archive`,
         {
@@ -297,8 +307,8 @@ describe("thread origin lifecycle", () => {
           headers: { "content-type": "application/json" },
         },
       );
-      expect(ownerClose.status).toBe(200);
-      expect(getThread(harness.db, unknown.id)).toBeNull();
+      expect(ownerClose.status).toBe(403);
+      expect(getThread(harness.db, unknown.id)?.deletedAt).toBeNull();
     });
   });
 
@@ -328,12 +338,15 @@ describe("thread origin lifecycle", () => {
         projectId: project.id,
         title: "[GB] TODO",
       });
-      const approval = issueThreadLifecycleApproval(harness.db, {
-        action: "archive",
-        expiresAt: Date.now() + 60_000,
-        source: { kind: "owner-card", ref: "card-bulk" },
-        threadId: manual.id,
-      });
+      expect(() =>
+        issueThreadLifecycleApproval(harness.db, {
+          action: "archive",
+          expiresAt: Date.now() + 60_000,
+          source: { kind: "owner-card", ref: "card-bulk" },
+          threadId: manual.id,
+        }),
+      ).toThrow("Trusted signed owner approval");
+      const approval = { approvalId: "unsigned-card" };
       const bulk = await harness.app.request(
         `/api/v1/environments/${environment.id}/archive-threads`,
         {
@@ -344,11 +357,8 @@ describe("thread origin lifecycle", () => {
           },
         },
       );
-      expect(bulk.status).toBe(200);
-      expect(await readJson(bulk)).toEqual({
-        ok: true,
-        archivedThreadIds: [bot.id],
-      });
+      expect(bulk.status).toBe(403);
+      expect(getThread(harness.db, bot.id)?.archivedAt).toBeNull();
       expect(getThread(harness.db, manual.id)?.archivedAt).toBeNull();
 
       const pluginShaped = await harness.app.request(
@@ -369,13 +379,9 @@ describe("thread origin lifecycle", () => {
         `/api/v1/projects/${project.id}`,
         { method: "DELETE" },
       );
-      expect(allowed.status).toBe(200);
-      expect(getThread(harness.db, manual.id)?.deletedAt).toEqual(
-        expect.any(Number),
-      );
-      expect(getThread(harness.db, bot.id)?.deletedAt).toEqual(
-        expect.any(Number),
-      );
+      expect(allowed.status).toBe(403);
+      expect(getThread(harness.db, manual.id)?.deletedAt).toBeNull();
+      expect(getThread(harness.db, bot.id)?.deletedAt).toBeNull();
     });
   });
 });

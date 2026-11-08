@@ -289,7 +289,12 @@ describe("listDueScheduledQueuedThreadMessages", () => {
       [
         "deleted",
         (database: Parameters<typeof deleteThread>[0], id: string) =>
-          deleteThread(database, noopNotifier, id),
+          deleteThread(
+            database,
+            noopNotifier,
+            id,
+            ownerManualThreadLifecycleActor,
+          ),
       ],
     ] as const) {
       const thread = createThread(db, noopNotifier, {
@@ -402,7 +407,10 @@ describe("wait lookups", () => {
       "plugin",
     ] as const) {
       expect(
-        listQueuedThreadMessagesWaitingOnKind(db, { kind, threadId: thread.id }),
+        listQueuedThreadMessagesWaitingOnKind(db, {
+          kind,
+          threadId: thread.id,
+        }),
       ).toEqual([]);
     }
   });

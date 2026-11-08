@@ -5,7 +5,9 @@ import {
   encodeClientTurnRequestIdNumber,
   threadScope,
   turnScope,
-  type PromptInput, ownerManualThreadLifecycleActor } from "@bb/domain";
+  type PromptInput,
+  ownerManualThreadLifecycleActor,
+} from "@bb/domain";
 import { createConnection } from "../../src/connection.js";
 import { noopNotifier } from "../../src/notifier.js";
 import {
@@ -177,9 +179,9 @@ describe("thread search data", () => {
           query,
           limitPerGroup: 20,
         });
-        expect(results.active.results.map((result) => result.thread.id)).toEqual(
-          [thread.id],
-        );
+        expect(
+          results.active.results.map((result) => result.thread.id),
+        ).toEqual([thread.id]);
       }
 
       const secretResults = searchThreadsWithPendingInteractionState(db, {
@@ -189,9 +191,15 @@ describe("thread search data", () => {
       expect(secretResults.active.total).toBe(0);
       expect(secretResults.archived.total).toBe(0);
 
-      updateThread(db, noopNotifier, thread.id, {
-        title: "titleupdatebackfill",
-      });
+      updateThread(
+        db,
+        noopNotifier,
+        thread.id,
+        {
+          title: "titleupdatebackfill",
+        },
+        ownerManualThreadLifecycleActor,
+      );
       const titleUpdateResults = searchThreadsWithPendingInteractionState(db, {
         query: "titleupdatebackfill",
         limitPerGroup: 20,
@@ -244,14 +252,24 @@ describe("thread search data", () => {
         providerId: "codex",
         title: "archivewriterneedle",
       });
-      archiveThread(db, noopNotifier, archivedThread.id, ownerManualThreadLifecycleActor);
+      archiveThread(
+        db,
+        noopNotifier,
+        archivedThread.id,
+        ownerManualThreadLifecycleActor,
+      );
 
       const deletedThread = createThread(db, noopNotifier, {
         projectId: project.id,
         providerId: "codex",
         title: "deletedwriterneedle",
       });
-      deleteThread(db, noopNotifier, deletedThread.id);
+      deleteThread(
+        db,
+        noopNotifier,
+        deletedThread.id,
+        ownerManualThreadLifecycleActor,
+      );
 
       createThread(db, noopNotifier, {
         projectId: project.id,
@@ -265,15 +283,20 @@ describe("thread search data", () => {
         title: "hiddenarchivedwriterneedle",
         visibility: "hidden",
       });
-      archiveThread(db, noopNotifier, hiddenArchivedThread.id, ownerManualThreadLifecycleActor);
+      archiveThread(
+        db,
+        noopNotifier,
+        hiddenArchivedThread.id,
+        ownerManualThreadLifecycleActor,
+      );
 
       const activeResults = searchThreadsWithPendingInteractionState(db, {
         query: "livewriterneedle",
         limitPerGroup: 20,
       });
-      expect(activeResults.active.results.map((result) => result.thread.id)).toEqual(
-        [activeThread.id],
-      );
+      expect(
+        activeResults.active.results.map((result) => result.thread.id),
+      ).toEqual([activeThread.id]);
       expect(activeResults.archived.total).toBe(0);
 
       const assistantResults = searchThreadsWithPendingInteractionState(db, {
@@ -407,7 +430,9 @@ describe("thread search data", () => {
           .map((match) => match.sourceKind)
           .sort(),
       ).toEqual(["title", "title_fallback"]);
-      expect(matches.filter((match) => match.sourceSeq !== null)).toHaveLength(1);
+      expect(matches.filter((match) => match.sourceSeq !== null)).toHaveLength(
+        1,
+      );
     } finally {
       closeConnection(db);
     }
@@ -430,7 +455,12 @@ describe("thread search data", () => {
           providerId: "codex",
           title: `partitionneedle archived ${index}`,
         });
-        archiveThread(db, noopNotifier, archivedThread.id, ownerManualThreadLifecycleActor);
+        archiveThread(
+          db,
+          noopNotifier,
+          archivedThread.id,
+          ownerManualThreadLifecycleActor,
+        );
         archivedIds.push(archivedThread.id);
       }
 
@@ -639,10 +669,9 @@ describe("thread search data", () => {
       expect(results.active.results.map((result) => result.thread.id)).toEqual([
         thread.id,
       ]);
-      expect(results.active.results[0]?.matches.map((match) => match.text)).toEqual([
-        "alpha split title",
-        "beta split message",
-      ]);
+      expect(
+        results.active.results[0]?.matches.map((match) => match.text),
+      ).toEqual(["alpha split title", "beta split message"]);
     } finally {
       closeConnection(db);
     }

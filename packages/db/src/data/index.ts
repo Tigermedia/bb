@@ -99,6 +99,10 @@ export {
 } from "./threads.js";
 export {
   issueThreadLifecycleApproval,
+  configureThreadApprovalAuthority,
+  approvalSigningPayload,
+  mutationPayloadHash,
+  authorizeThreadLifecycleMutation,
   ThreadLifecycleProtectedError,
 } from "./thread-lifecycle-guard.js";
 export type { IssueThreadLifecycleApprovalArgs } from "./thread-lifecycle-guard.js";

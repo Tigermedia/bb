@@ -1,3 +1,5 @@
+import { generateKeyPairSync, sign, type KeyObject } from "node:crypto";
+import { getThread } from "../../src/data/threads.js";
 import Database from "better-sqlite3";
 import fs from "node:fs";
 import { resolve, dirname } from "node:path";
@@ -10,7 +12,9 @@ import { threadLifecycleApprovals, threads } from "../../src/schema.js";
 import {
   archiveThread,
   createThread,
-  issueThreadLifecycleApproval,
+  issueThreadLifecycleApproval as issueUnsignedThreadLifecycleApproval,
+  approvalSigningPayload,
+  configureThreadApprovalAuthority,
   markThreadDeleted,
   pinThread,
   ThreadLifecycleProtectedError,
@@ -48,6 +52,34 @@ function createOwnedThread(
   });
 }
 
+const signingKeys = new WeakMap<
+  ReturnType<typeof setup>["db"],
+  { publicKey: KeyObject; privateKey: KeyObject }
+>();
+function issueThreadLifecycleApproval(
+  db: ReturnType<typeof setup>["db"],
+  input: Parameters<typeof issueUnsignedThreadLifecycleApproval>[1],
+) {
+  const keys = signingKeys.get(db) ?? generateKeyPairSync("ed25519");
+  signingKeys.set(db, keys);
+  const { publicKey, privateKey } = keys;
+  configureThreadApprovalAuthority(db, publicKey);
+  const args = {
+    ...input,
+    expectedRevision: getThread(db, input.threadId)!.mutationRevision,
+    requesterId: "fixture-agent",
+    audience: "bb-fixture",
+  };
+  return issueUnsignedThreadLifecycleApproval(db, {
+    ...args,
+    signature: sign(
+      null,
+      Buffer.from(approvalSigningPayload(args)),
+      privateKey,
+    ).toString("base64url"),
+  });
+}
+
 describe("thread creation provenance", () => {
   it("pins a visible manual thread only at creation", () => {
     const { db, project } = setup();
@@ -59,12 +91,21 @@ describe("thread creation provenance", () => {
     expect(manual.pinnedAt).toEqual(expect.any(Number));
     expect(manual.pinSortKey).toEqual(expect.any(String));
 
-    const unpinned = unpinThread(db, noopNotifier, { threadId: manual.id });
+    const unpinned = unpinThread(db, noopNotifier, {
+      threadId: manual.id,
+      actor: ownerManualThreadLifecycleActor,
+    });
     expect(unpinned?.pinnedAt).toBeNull();
     expect(unpinned?.pinSortKey).toBeNull();
-    const renamed = updateThread(db, noopNotifier, manual.id, {
-      title: "renamed and done",
-    });
+    const renamed = updateThread(
+      db,
+      noopNotifier,
+      manual.id,
+      {
+        title: "renamed and done",
+      },
+      ownerManualThreadLifecycleActor,
+    );
     db.update(threads)
       .set({
         createdAt: 1,
@@ -72,17 +113,22 @@ describe("thread creation provenance", () => {
       })
       .where(eq(threads.id, manual.id))
       .run();
-    const stored = db.select().from(threads).where(eq(threads.id, manual.id)).get();
+    const stored = db
+      .select()
+      .from(threads)
+      .where(eq(threads.id, manual.id))
+      .get();
     expect(renamed?.title).toBe("renamed and done");
     expect(stored?.creationProvenance).toBe("manual");
     expect(stored?.pinnedAt).toBeNull();
     expect(stored?.status).toBe("idle");
     expect(stored?.createdAt).toBe(1);
-    expect(() => archiveThread(db, noopNotifier, manual.id, automation)).toThrow(
-      ThreadLifecycleProtectedError,
-    );
+    expect(() =>
+      archiveThread(db, noopNotifier, manual.id, automation),
+    ).toThrow(ThreadLifecycleProtectedError);
     expect(
-      db.select().from(threads).where(eq(threads.id, manual.id)).get()?.archivedAt,
+      db.select().from(threads).where(eq(threads.id, manual.id)).get()
+        ?.archivedAt,
     ).toBeNull();
   });
 
@@ -116,16 +162,18 @@ describe("thread creation provenance", () => {
     expect(unknown.pinnedAt).toBeNull();
     expect(botTodo.pinnedAt).toBeNull();
     expect(botDecision.pinnedAt).toBeNull();
-    expect(pinThread(db, noopNotifier, { threadId: botDecision.id })?.pinnedAt).toEqual(
-      expect.any(Number),
-    );
-    expect(unpinThread(db, noopNotifier, { threadId: botTodo.id })?.pinnedAt).toBeNull();
-    expect(() => archiveThread(db, noopNotifier, unknown.id, automation)).toThrow(
-      ThreadLifecycleProtectedError,
-    );
-    expect(archiveThread(db, noopNotifier, botTodo.id, automation)?.archivedAt).toEqual(
-      expect.any(Number),
-    );
+    expect(
+      pinThread(db, noopNotifier, { threadId: botDecision.id })?.pinnedAt,
+    ).toEqual(expect.any(Number));
+    expect(
+      unpinThread(db, noopNotifier, { threadId: botTodo.id })?.pinnedAt,
+    ).toBeNull();
+    expect(() =>
+      archiveThread(db, noopNotifier, unknown.id, automation),
+    ).toThrow(ThreadLifecycleProtectedError);
+    expect(
+      archiveThread(db, noopNotifier, botTodo.id, automation)?.archivedAt,
+    ).toEqual(expect.any(Number));
     expect(
       archiveThread(db, noopNotifier, botDecision.id, automation)?.archivedAt,
     ).toEqual(expect.any(Number));
@@ -144,8 +192,12 @@ describe("thread creation provenance", () => {
       creationProvenance: "manual",
     });
     expect(
-      archiveThread(db, noopNotifier, archived.id, ownerManualThreadLifecycleActor)
-        ?.archivedAt,
+      archiveThread(
+        db,
+        noopNotifier,
+        archived.id,
+        ownerManualThreadLifecycleActor,
+      )?.archivedAt,
     ).toEqual(expect.any(Number));
     expect(
       markThreadDeleted(db, noopNotifier, {
@@ -169,7 +221,7 @@ describe("thread creation provenance", () => {
       source: { kind: "owner-card", ref: "card-archive" },
       threadId: target.id,
     });
-    const closeApproval = issueThreadLifecycleApproval(db, {
+    let closeApproval = issueThreadLifecycleApproval(db, {
       action: "close",
       expiresAt: Date.now() + 60_000,
       source: { kind: "owner-card", ref: "card-close" },
@@ -177,26 +229,39 @@ describe("thread creation provenance", () => {
     });
     const expired = issueThreadLifecycleApproval(db, {
       action: "archive",
-      expiresAt: Date.now() - 1,
+      expiresAt: Date.now() + 60_000,
       source: { kind: "owner-card", ref: "card-expired" },
       threadId: other.id,
     });
 
+    db.update(threadLifecycleApprovals)
+      .set({ expiresAt: 1 })
+      .where(eq(threadLifecycleApprovals.id, expired.approvalId))
+      .run();
     expect(() =>
       archiveThread(db, noopNotifier, other.id, {
         kind: "automation",
+        requesterId: "fixture-agent",
+        audience: "bb-fixture",
         approvalId: archiveApproval.approvalId,
       }),
     ).toThrow(ThreadLifecycleProtectedError);
     expect(() =>
       markThreadDeleted(db, noopNotifier, {
-        actor: { kind: "automation", approvalId: archiveApproval.approvalId },
+        actor: {
+          kind: "automation",
+          requesterId: "fixture-agent",
+          audience: "bb-fixture",
+          approvalId: archiveApproval.approvalId,
+        },
         threadId: target.id,
       }),
     ).toThrow(ThreadLifecycleProtectedError);
     expect(() =>
       archiveThread(db, noopNotifier, other.id, {
         kind: "automation",
+        requesterId: "fixture-agent",
+        audience: "bb-fixture",
         approvalId: expired.approvalId,
       }),
     ).toThrow(ThreadLifecycleProtectedError);
@@ -204,12 +269,16 @@ describe("thread creation provenance", () => {
     expect(
       archiveThread(db, noopNotifier, target.id, {
         kind: "automation",
+        requesterId: "fixture-agent",
+        audience: "bb-fixture",
         approvalId: archiveApproval.approvalId,
       })?.archivedAt,
     ).toEqual(expect.any(Number));
     expect(() =>
       archiveThread(db, noopNotifier, other.id, {
         kind: "automation",
+        requesterId: "fixture-agent",
+        audience: "bb-fixture",
         approvalId: archiveApproval.approvalId,
       }),
     ).toThrow(ThreadLifecycleProtectedError);
@@ -223,15 +292,29 @@ describe("thread creation provenance", () => {
     expect(() =>
       archiveThread(db, noopNotifier, target.id, {
         kind: "automation",
+        requesterId: "fixture-agent",
+        audience: "bb-fixture",
         approvalId: archiveApproval.approvalId,
       }),
     ).toThrow(ThreadLifecycleProtectedError);
     expect(
-      db.select().from(threads).where(eq(threads.id, target.id)).get()?.archivedAt,
+      db.select().from(threads).where(eq(threads.id, target.id)).get()
+        ?.archivedAt,
     ).toBeNull();
+    closeApproval = issueThreadLifecycleApproval(db, {
+      action: "close",
+      expiresAt: Date.now() + 60_000,
+      source: { kind: "owner-card", ref: "fresh-close" },
+      threadId: target.id,
+    });
     expect(
       markThreadDeleted(db, noopNotifier, {
-        actor: { kind: "automation", approvalId: closeApproval.approvalId },
+        actor: {
+          kind: "automation",
+          requesterId: "fixture-agent",
+          audience: "bb-fixture",
+          approvalId: closeApproval.approvalId,
+        },
         threadId: target.id,
       })?.deletedAt,
     ).toEqual(expect.any(Number));

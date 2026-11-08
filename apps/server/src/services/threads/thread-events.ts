@@ -359,9 +359,15 @@ function applyUserTurnReadForEvent(
   }
 
   const previousThread = getThread(db, args.threadId);
-  const updatedThread = updateThread(db, noopNotifier, args.threadId, {
-    lastReadAt: Date.now(),
-  });
+  const updatedThread = updateThread(
+    db,
+    noopNotifier,
+    args.threadId,
+    {
+      lastReadAt: Date.now(),
+    },
+    { kind: "runtime" },
+  );
   if (!previousThread || !updatedThread) {
     return null;
   }

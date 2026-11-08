@@ -799,6 +799,13 @@
       "when": 1794122958281,
       "tag": "0113_grey_namora",
       "breakpoints": true
+    },
+    {
+      "idx": 114,
+      "version": "6",
+      "when": 1794126093029,
+      "tag": "0114_nifty_blue_blade",
+      "breakpoints": true
     }
   ]
 }

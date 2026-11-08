@@ -29,6 +29,7 @@ import {
   releaseUnarchivedChildrenFromArchivedThread,
 } from "./thread-ownership.js";
 import {
+  assertBatchThreadMutationAllowed,
   actorForRelatedThreads,
   asThreadLifecycleApiError,
 } from "./thread-lifecycle-actor.js";
@@ -137,6 +138,17 @@ export function archiveThreadAndHiddenSourceForks(
   args: ArchiveThreadAndHiddenSourceForksArgs,
 ): Thread | null {
   try {
+    assertBatchThreadMutationAllowed(
+      deps.db,
+      [
+        args.thread.id,
+        ...listUnarchivedHiddenSourceThreads(deps.db, {
+          sourceThreadId: args.thread.id,
+        }).map((thread) => thread.id),
+      ],
+      args.actor,
+      "archive",
+    );
     const archivedThread = archiveThreadWithLifecycleEffects(deps, args);
     if (!archivedThread) {
       return null;
@@ -165,6 +177,12 @@ export function archiveEnvironmentThreads(
   const threads = listLiveThreadsInEnvironment(deps.db, {
     environmentId: args.environment.id,
   });
+  assertBatchThreadMutationAllowed(
+    deps.db,
+    threads.map((thread) => thread.id),
+    args.actor,
+    "archive",
+  );
   const archivedThreadIds: string[] = [];
 
   for (const thread of threads) {
@@ -222,6 +240,12 @@ function archiveThreadAndChildrenUnchecked(
       sourceThreadId: args.parentThread.id,
     }),
   ].filter((thread) => thread.id !== args.parentThread.id);
+  assertBatchThreadMutationAllowed(
+    deps.db,
+    [args.parentThread.id, ...relatedThreads.map((thread) => thread.id)],
+    args.actor,
+    "archive",
+  );
   const parentAlreadyArchived = args.parentThread.archivedAt !== null;
   if (!parentAlreadyArchived) {
     const environment = resolveArchiveThreadEnvironment(deps, {
